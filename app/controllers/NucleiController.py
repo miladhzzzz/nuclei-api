@@ -43,7 +43,7 @@ class NucleiController:
         command = ["nuclei", "-u", target]
         if template:
             command += ["-t", template]
-
+        
         container_name = f"nuclei_scan_{self.generate_scan_id()}"
         container_id = self.docker.run_container(
             image=self.nuclei_image,
@@ -51,5 +51,8 @@ class NucleiController:
             detach=True,
             name=container_name
         )
+
+        print(f"New Scan Started: nuclei_command:{command}, container_name:{container_name}")
+
         return {"container_name": container_name, "message": "Scan started successfully"}
     
