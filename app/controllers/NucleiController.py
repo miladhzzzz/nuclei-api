@@ -1,5 +1,4 @@
 import random
-import os
 from controllers.DockerController import DockerController
 
 class NucleiController:

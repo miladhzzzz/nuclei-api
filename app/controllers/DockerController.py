@@ -1,7 +1,4 @@
-import subprocess
-import shlex
-import json
-import time
+import subprocess, shlex, json
 from typing import Iterator
 
 class DockerController:

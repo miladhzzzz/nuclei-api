@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-import uvicorn, datetime
+import uvicorn
 from routes.NucleiRoutes import router as nuclei_router
 from controllers.NucleiController import NucleiController
 
