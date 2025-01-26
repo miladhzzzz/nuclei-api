@@ -40,7 +40,7 @@ class NucleiController:
         Returns:
             dict: Container Name or error message.
         """
-        command = ["nuclei", "-u", target]
+        command = ["-u", target]
         if template:
             command += ["-t", template]
         
