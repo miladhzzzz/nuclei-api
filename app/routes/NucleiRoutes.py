@@ -40,7 +40,6 @@ class ScanRequest(BaseModel):
 class ContainerIDRequest(BaseModel):
     container_id: str = Field(..., example="nuclei_scan_123456", pattern=r"^nuclei_scan_\d{6}$")  # Must start with 'nuclei_scan_' followed by 6 digits
 
-
 @router.post("/scan")
 async def run_scan(scan_request: ScanRequest):
     """
