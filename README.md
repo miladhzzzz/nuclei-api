@@ -150,9 +150,24 @@ The Nuclei API is a stateless API built to run powerful and customizable vulnera
 
 ### Prerequisites
 
-* Docker installed on the host machine.
+* Docker + Docker Compose installed on the host machine.
 
-* FastAPI environment for running the API.
+* FastAPI environment for running the API Locally.
+
+### Run In Docker
+
+1. Clone the Repository:
+
+    ```shell
+        git clone <repository-url>
+        cd nuclei-api
+    ```
+
+2. Use Docker Compose to bring the project up and build the image:
+
+    ```shell
+        docker compose up -d
+    ```
 
 ### Running the API
 
@@ -187,7 +202,7 @@ The Nuclei API is a stateless API built to run powerful and customizable vulnera
     -H "Content-Type: application/json" \
     -d '{
         "target": "<https://example.com>",
-        "scanType": "cves"
+        "template": "cves" // Optional
     }' \
     http://<host>:8080/nuclei/scan
 ```
