@@ -16,8 +16,8 @@ limiter = Limiter(key_func=get_remote_address)
 
 # Custom validation function for domain and IP
 def is_valid_domain(value: str) -> bool:
-    # Simple domain regex to match a domain with at least one period (.)
-    domain_regex = r"^(?!-)(?:[A-Za-z0-9-]{1,63}\.?)+$"  # Basic regex for domain
+    # Regex to match domains with optional http:// or https://
+    domain_regex = r"^(https?://)?(?!-)(?:[A-Za-z0-9-]{1,63}\.?)+$"
     return bool(re.match(domain_regex, value)) and '.' in value
 
 def is_valid_ip(value: str) -> bool:
