@@ -1,6 +1,8 @@
-import re
-import socket
-from fastapi import APIRouter, HTTPException
+import re, socket
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from controllers.NucleiController import NucleiController
@@ -8,6 +10,9 @@ from controllers.DockerController import DockerController
 
 router = APIRouter()
 nuclei_controller = NucleiController()
+
+# Initialize Limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # Custom validation function for domain and IP
 def is_valid_domain(value: str) -> bool:
@@ -41,7 +46,8 @@ class ContainerIDRequest(BaseModel):
     container_id: str = Field(..., example="nuclei_scan_123456", pattern=r"^nuclei_scan_\d{6}$")  # Must start with 'nuclei_scan_' followed by 6 digits
 
 @router.post("/scan")
-async def run_scan(scan_request: ScanRequest):
+@limiter.limit("5/minute")
+async def run_scan(scan_request: ScanRequest, request: Request):
     """
     Start a Nuclei scan for the given target.
     
@@ -60,7 +66,8 @@ async def run_scan(scan_request: ScanRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/scan/{container_id}/logs", response_class=StreamingResponse)
-async def get_logs(container_id: str):
+@limiter.limit("20/minute")
+async def get_logs(container_id: str, request: Request):
     """
     API endpoint to stream container logs as a JSON stream.
 
