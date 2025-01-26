@@ -2,7 +2,11 @@
 
 ## Overview
 
-The Nuclei API is a stateless API built to run powerful and customizable vulnerability scans using the Nuclei engine. The API integrates Dockerized Nuclei, ensuring it is lightweight, scalable, and highly portable. It is designed to support various scan types, handle rate-limiting, and validate input targets to ensure efficient and secure operations.
+The Nuclei API is a robust and stateless application designed to harness the power of Nuclei for efficient and scalable vulnerability scanning. By leveraging Docker, the API isolates each scan in its container, ensuring complete statelessness and independence between requests. This design enhances performance, reduces resource contention, and provides a clean slate for every operation, eliminating any residual effects between scans.
+
+With its modular architecture, the Nuclei API simplifies the process of running, managing, and streaming vulnerability scans, offering features like input validation, real-time log streaming, and integration of Nuclei's versatile scan templates. The API is built using FastAPI, ensuring a modern and fast development experience while providing an intuitive and secure interface for users.
+
+This API is tailored for both security professionals and DevOps teams seeking to automate and integrate vulnerability scanning seamlessly into their workflows.
 
 ## Features
 
@@ -126,6 +130,7 @@ The Nuclei API is a stateless API built to run powerful and customizable vulnera
     ```
 
 3. See Scan Results
+
     *Endpoint*: `GET /nuclei/scan/{container_name}/logs`
 
     *Description*:
@@ -159,14 +164,14 @@ The Nuclei API is a stateless API built to run powerful and customizable vulnera
 1. Clone the Repository:
 
     ```shell
-        git clone <repository-url>
-        cd nuclei-api
+    git clone <repository-url>
+    cd nuclei-api
     ```
 
 2. Use Docker Compose to bring the project up and build the image:
 
     ```shell
-        docker compose up -d
+    docker compose up -d
     ```
 
 ### Running the API
@@ -191,20 +196,20 @@ The Nuclei API is a stateless API built to run powerful and customizable vulnera
     ```
 
 4. Verify API:
-    Access http://<host>:8080/ to ensure the API is running.
+    * Access "http://{host}:8080/" to ensure the API is running.
 
 ## Usage Examples
 
 ### Running a Basic Scan
 
 ```shell
-    curl -X POST \
-    -H "Content-Type: application/json" \
-    -d '{
-        "target": "<https://example.com>",
-        "template": "cves" // Optional
-    }' \
-    http://<host>:8080/nuclei/scan
+curl -X POST \
+-H "Content-Type: application/json" \
+-d '{
+    "target": "<https://example.com>",
+    "template": "cves" // Optional
+}' \
+http://<host>:8080/nuclei/scan
 ```
 
 ### Future Enhancements
