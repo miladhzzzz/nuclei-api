@@ -22,8 +22,8 @@ app = FastAPI(
 app.include_router(nuclei_router, prefix="/nuclei", tags=["Nuclei"])
 
 @app.get("/")
-async def root():
-    return {"message": "Welcome to the Nuclei API"}
+async def ping():
+    return {"ping": "pong!"}
 
 
 if __name__ == "__main__":

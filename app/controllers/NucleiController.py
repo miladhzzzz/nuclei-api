@@ -38,7 +38,7 @@ class NucleiController:
             template (str): Optional template to use for the scan.
         
         Returns:
-            dict: Container ID or error message.
+            dict: Container Name or error message.
         """
         command = ["nuclei", "-u", target]
         if template:
