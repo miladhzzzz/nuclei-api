@@ -1,10 +1,28 @@
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 from fastapi import FastAPI
-import uvicorn
+import uvicorn, sentry_sdk, os
 from routes.NucleiRoutes import router as nuclei_router
 from controllers.NucleiController import NucleiController
 
 nco = NucleiController()
+
+load_dotenv()
+
+key = os.getenv("SENTRY_DSN")
+
+sentry_sdk.init(
+    dsn=key,
+    # Set traces_sample_rate to 1.0 to capture 100%
+    # of transactions for tracing.
+    traces_sample_rate=1.0,
+    _experiments={
+        # Set continuous_profiling_auto_start to True
+        # to automatically start the profiler on when
+        # possible.
+        "continuous_profiling_auto_start": True,
+    },
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
