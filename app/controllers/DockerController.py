@@ -72,7 +72,7 @@ class DockerController:
         Yields:
             dict: JSON object with log lines or error messages.
         """
-        command = f"docker logs {'--follow' if stream else ''} {container_id_or_name}"
+        command = f"docker logs --tail 1000 {'--follow' if stream else ''} {container_id_or_name}"
         try:
             process = subprocess.Popen(
                 shlex.split(command),
@@ -86,12 +86,11 @@ class DockerController:
                 error_output = process.stderr.readline()
 
                 if output:
-                    yield {"source": "stdout", "log": output.strip()}
+                    yield {"log": output.strip()}
                 elif error_output:
-                    yield {"source": "stderr", "log": error_output.strip()}
+                    yield {"log": error_output.strip()}
                 elif process.poll() is not None:
                     break
-
         except Exception as e:
             yield {"error": str(e)}
 
