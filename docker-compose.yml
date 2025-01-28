@@ -10,3 +10,10 @@ services:
     privileged: true
     restart: unless-stopped
 
+  nuclei-ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    restart: unless-stopped
