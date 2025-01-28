@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Loader2, AlertCircle, FolderTree, RefreshCcw } from 'lucide-react';
+import { Send, Loader2, AlertCircle, FolderTree, RefreshCcw, CheckSquare, Square } from 'lucide-react';
 
 interface ScanResult {
   id: string; // Scan ID extracted from container name
@@ -30,6 +30,7 @@ function App() {
   const [scans, setScans] = useState<ScanResult[]>([]);
   const [currentScanId, setCurrentScanId] = useState<string>('');
   const [logs, setLogs] = useState<string>('');
+  const [useAllTemplates, setUseAllTemplates] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
 
   useEffect(() => {
@@ -56,7 +57,7 @@ function App() {
         },
         body: JSON.stringify({
           target,
-          templates: selectedTemplates.map((t) => `${t}/`),
+          templates: useAllTemplates ? ['.'] : selectedTemplates.map((t) => `${t}/`),
         }),
       });
 
@@ -102,9 +103,21 @@ function App() {
   };
 
   const toggleTemplate = (templateId: string) => {
-    setSelectedTemplates((prev) =>
-      prev.includes(templateId) ? prev.filter((t) => t !== templateId) : [...prev, templateId]
+    if (useAllTemplates) {
+      setUseAllTemplates(false);
+    }
+    setSelectedTemplates(prev =>
+      prev.includes(templateId)
+        ? prev.filter(t => t !== templateId)
+        : [...prev, templateId]
     );
+  };
+
+  const toggleAllTemplates = () => {
+    setUseAllTemplates(!useAllTemplates);
+    if (!useAllTemplates) {
+      setSelectedTemplates([]);
+    }
   };
 
   const switchScan = (scanId: string) => {
@@ -139,7 +152,22 @@ function App() {
                   Select Templates
                 </div>
               </label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* All Templates Option */}
+              <div
+                className={`p-3 rounded border cursor-pointer transition-colors mb-3 ${
+                  useAllTemplates
+                    ? 'bg-blue-900/30 border-blue-500'
+                    : 'bg-gray-700/30 border-gray-600 hover:border-gray-500'
+                }`}
+                onClick={toggleAllTemplates}
+              >
+                <div className="font-medium flex items-center gap-2">
+                  {useAllTemplates ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                  All Templates
+                </div>
+                <div className="text-sm text-gray-400">Run scan with all available Nuclei templates</div>
+              </div>
+              <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 ${useAllTemplates ? 'opacity-50 pointer-events-none' : ''}`}>
                 {TEMPLATE_CATEGORIES.map((template) => (
                   <div
                     key={template.id}
@@ -155,10 +183,13 @@ function App() {
                   </div>
                 ))}
               </div>
+              {!useAllTemplates && selectedTemplates.length === 0 && (
+                <p className="text-yellow-500 text-sm mt-2">Please select at least one template or use all templates</p>
+              )}
             </div>
             <button
               type="submit"
-              disabled={loading || selectedTemplates.length === 0}
+              disabled={loading || (selectedTemplates.length === 0 && !useAllTemplates)}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {loading ? (
