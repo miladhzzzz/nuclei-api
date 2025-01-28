@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 import uvicorn, sentry_sdk, os
+from fastapi.middleware.cors import CORSMiddleware
 from routes.NucleiRoutes import router as nuclei_router
 from controllers.NucleiController import NucleiController
 
@@ -33,7 +34,15 @@ app = FastAPI(
     lifespan=lifespan,
     title="Nuclei API",
     description="API for running Nuclei scans using Docker.",
-    version="1.0.0"
+    version="1.0.0",
+    openapi_url=None
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_methods=["*"],  # Allow all HTTP methods, including OPTIONS
+    allow_headers=["*"],  # Allow all headers
 )
 
 # Register routes
