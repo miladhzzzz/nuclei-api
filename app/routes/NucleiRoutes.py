@@ -10,6 +10,8 @@ from controllers.DockerController import DockerController
 router = APIRouter()
 nuclei_controller = NucleiController()
 
+ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
+
 # Initialize Limiter
 limiter = Limiter(key_func=get_remote_address)
 
@@ -82,7 +84,19 @@ async def get_logs(container_id: str, request: Request):
         raise HTTPException(status_code=400, detail="Invalid container ID.")
 
     async def log_stream():
-        for log_line in docker_controller.stream_container_logs(container_id):
-            yield f"{log_line}\n"  # Ensure newline after each JSON object
+        logs = []  # List to collect the logs in the reverse order
+        for log_dict in docker_controller.stream_container_logs(container_id):  # Use regular for loop
+                # Extract the first key from the dictionary
+                log_line = list(log_dict)[0]  # Assumes the first value is the log message
+                # print(log_line)
+                # Clean the log line by removing ANSI escape sequences
+                clean_log = ANSI_ESCAPE.sub('', log_line)
+                
+                # Append the cleaned log message to the list
+                logs.append(clean_log)
+
+        # Now, yield logs in the correct order (reversed)
+        for log in reversed(logs):
+            yield f"{log}\n"  # Add a newline after each cleaned log
 
     return StreamingResponse(log_stream(), media_type="application/json")

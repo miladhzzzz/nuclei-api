@@ -86,9 +86,9 @@ class DockerController:
                 error_output = process.stderr.readline()
 
                 if output:
-                    yield {"log": output.strip()}
+                    yield {output.strip()}
                 elif error_output:
-                    yield {"log": error_output.strip()}
+                    yield {error_output.strip()}
                 elif process.poll() is not None:
                     break
         except Exception as e:
