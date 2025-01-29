@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y docker.io python3 python3-pip
 WORKDIR /app
 
 # Copy the application files into the working directory
+COPY .env ./
 COPY requirements.txt ./
 COPY app/ ./ 
 
