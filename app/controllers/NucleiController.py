@@ -28,20 +28,20 @@ class NucleiController:
         result = self.docker.pull_image(self.nuclei_image)
         return {"message": "Image pulled successfully", "details": result}
 
-    def run_nuclei_scan(self, target: str, template: str = None):
+    def run_nuclei_scan(self, target: str, template: list = None):
         """
         Run a Nuclei scan in a Docker container.
         
         Args:
             target (str): The target to scan.
-            template (str): Optional template to use for the scan.
+            template (list): Optional templates to use for the scan.
         
         Returns:
             dict: Container Name or error message.
         """
-        command = ["-u", target]
-        if template:
-            command += ["-t", template]
+        command = ["-u", target , "-nmhe"]
+        if template and template != ["."]:
+            command += ["-t"] + template
         
         container_name = f"nuclei_scan_{self.generate_scan_id()}"
         container_id = self.docker.run_container(
