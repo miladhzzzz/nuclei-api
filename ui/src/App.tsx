@@ -137,10 +137,10 @@ function App() {
             <div>
               <label className="block text-sm font-medium mb-2">Target URL</label>
               <input
-                type="url"
+                type="text"
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
-                placeholder="https://example.com"
+                placeholder="https://example.com or 8.8.8.8"
                 className="w-full px-4 py-2 rounded bg-gray-700 border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 required
               />
