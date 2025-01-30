@@ -41,7 +41,7 @@ def is_valid_ip(value: str) -> bool:
 # Pydantic model for the scan request
 class ScanRequest(BaseModel):
     target: str = Field(..., example="google.com")  # Relaxed regex to allow letters, numbers, dots, hyphens
-    template: str = Field(None, example="cves")  # Optional template field   
+    templates: list = Field(None, example="cves/")  # Optional template field   
 # Pydantic model to validate 'get_logs' parameters
 class ContainerIDRequest(BaseModel):
     container_id: str = Field(..., example="nuclei_scan_123456", pattern=r"^nuclei_scan_\d{6}$")  # Must start with 'nuclei_scan_' followed by 6 digits
@@ -54,14 +54,13 @@ async def run_scan(scan_request: ScanRequest, request: Request):
     
     Args:
         target (str): The target to scan.
-        template (str): Optional template to use.
+        template (list): Optional templates to use.
     """
     # Validate target: check if it's a valid domain or IP address
     if not (is_valid_domain(scan_request.target) or is_valid_ip(scan_request.target)):
         raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
-    
     try:
-        result = nuclei_controller.run_nuclei_scan(scan_request.target, scan_request.template)
+        result = nuclei_controller.run_nuclei_scan(scan_request.target, scan_request.templates)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
