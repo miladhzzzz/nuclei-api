@@ -107,7 +107,7 @@ This API is tailored for both security professionals and DevOps teams seeking to
     ```json
     {
         "target": "<https://example.com>",
-        "template": "cves" // Optional
+        "templates": ["cves/", "vulnerabilities/"] // Optional
     }
     ```
 
@@ -115,7 +115,7 @@ This API is tailored for both security professionals and DevOps teams seeking to
 
     * `target`: (Required) The target domain or IP to scan. Accepts domains with or without HTTP/HTTPS.
 
-    * `template`: (Optional) Specifies the type of scan to run. Defaults to all if not provided.
+    * `templates`: (Optional) List That Specifies the type of scan to run. Defaults to all if not provided.
 
     *Response*:
 
