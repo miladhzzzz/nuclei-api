@@ -48,6 +48,7 @@ app.add_middleware(
 # Register routes
 app.include_router(nuclei_router, prefix="/nuclei", tags=["Nuclei"])
 
+# This is for healthchecks disable if you dont want to do health checks
 @app.get("/")
 async def ping():
     return {"ping": "pong!"}
