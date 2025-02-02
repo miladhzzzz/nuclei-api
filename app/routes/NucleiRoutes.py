@@ -95,7 +95,7 @@ async def get_logs(container_id: str, request: Request):
                 logs.append(clean_log)
 
         # Now, yield logs in the correct order (reversed)
-        for log in reversed(logs):
+        for log in logs:
             yield f"{log}\n"  # Add a newline after each cleaned log
 
     return StreamingResponse(log_stream(), media_type="application/json")
