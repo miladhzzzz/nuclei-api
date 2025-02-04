@@ -4,3 +4,4 @@ pydantic
 slowapi
 sentry_sdk
 python-dotenv
+python-multipart
