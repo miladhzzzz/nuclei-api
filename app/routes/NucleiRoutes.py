@@ -1,12 +1,16 @@
-import re, socket
+import re, socket, os
+from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from controllers.NucleiController import NucleiController
 from controllers.DockerController import DockerController
 
+load_dotenv()
+
+nulcei_upload_save_path = os.getenv("NUCLEI_CUSTOM_TEMPLATE_UPLOAD_PATH")
 router = APIRouter()
 nuclei_controller = NucleiController()
 
@@ -65,6 +69,48 @@ async def run_scan(scan_request: ScanRequest, request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/scan/custom")
+@limiter.limit("5/minute")
+async def run_custom_scan(
+    request: Request,
+    target: str = Form(...),  # Required form field
+    template_file: UploadFile = File(None)  # Optional file upload
+):
+    """
+    Start a custom Nuclei scan for the given target with a custom template.
+
+    Args:
+        target (str): The target to scan.
+        template_file (UploadFile): Custom Template YAML file.
+    """
+    
+    # Check if template_file is provided
+    if not template_file or not template_file.filename:
+        raise HTTPException(status_code=400, detail="Invalid template file. No file provided.")
+
+    # Define path to save uploaded template
+    save_path = f"{nulcei_upload_save_path}/{template_file.filename}"
+
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    # Save the uploaded YAML file
+    with open(save_path, "wb") as buffer:
+        buffer.write(await template_file.read())
+
+    # Validate target: check if it's a valid domain or IP address
+    if not (is_valid_domain(target) or is_valid_ip(target)):
+        raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
+
+    try:
+        # Run Nuclei scan with custom template
+        name = template_file.filename.strip()
+        result = nuclei_controller.run_nuclei_scan(target, template_file=name)
+        return result 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    
 @router.get("/scan/{container_id}/logs", response_class=StreamingResponse)
 @limiter.limit("20/minute")
 async def get_logs(container_id: str, request: Request):
