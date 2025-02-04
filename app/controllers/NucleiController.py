@@ -1,10 +1,14 @@
-import random
+import random, os
+from dotenv import load_dotenv
 from controllers.DockerController import DockerController
+
+load_dotenv()
 
 class NucleiController:
     def __init__(self):
         self.docker = DockerController()
         self.nuclei_image = "projectdiscovery/nuclei:latest"
+        self.nuclei_template = os.getenv("NUCLEI_TEMPLATE_PATH")
 
     def generate_scan_id(self) -> int:
         """
@@ -28,18 +32,26 @@ class NucleiController:
         result = self.docker.pull_image(self.nuclei_image)
         return {"message": "Image pulled successfully", "details": result}
 
-    def run_nuclei_scan(self, target: str, template: list = None):
+    def run_nuclei_scan(self, target: str, template: list = None, template_file=None):
         """
         Run a Nuclei scan in a Docker container.
         
         Args:
             target (str): The target to scan.
             template (list): Optional templates to use for the scan.
-        
+            template_file (UploadFile): Custom Template YAML file.
         Returns:
             dict: Container Name or error message.
         """
+        volumes = {}
+        if template_file:
+            volumes = {f"{self.nuclei_template}": "/root/nuclei-templates"}
+
         command = ["-u", target , "-nmhe"]
+        
+        if template_file:
+            command += ["-t", f"custom/{template_file}"]
+
         if template and template != ["."]:
             command += ["-t"] + template
         
@@ -48,7 +60,8 @@ class NucleiController:
             image=self.nuclei_image,
             command=" ".join(command),
             detach=True,
-            name=container_name
+            name=container_name,
+            **({"volumes": volumes} if volumes else {})
         )
 
         print(f"New Scan Started: nuclei_command:{command}, container_name:{container_name}")
