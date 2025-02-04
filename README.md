@@ -1,229 +1,211 @@
-# Nuclei API Documentation
+# Nuclei Scanner UI and API Documentation
 
 ## Overview
 
-The Nuclei API is a robust and stateless application designed to harness the power of Nuclei for efficient and scalable vulnerability scanning. By leveraging Docker, the API isolates each scan in its container, ensuring complete statelessness and independence between requests. This design enhances performance, reduces resource contention, and provides a clean slate for every operation, eliminating any residual effects between scans.
+The Nuclei Scanner is a web-based application that provides a user-friendly interface for initiating and managing vulnerability scans using the Nuclei tool. The application is built using React for the frontend and FastAPI for the backend, with Docker used to run Nuclei scans in isolated containers. This setup ensures that each scan is stateless and independent, enhancing performance and security.
 
-With its modular architecture, the Nuclei API simplifies the process of running, managing, and streaming vulnerability scans, offering features like input validation, real-time log streaming, and integration of Nuclei's versatile scan templates. The API is built using FastAPI, ensuring a modern and fast development experience while providing an intuitive and secure interface for users.
+### Key Features
 
-This API is tailored for both security professionals and DevOps teams seeking to automate and integrate vulnerability scanning seamlessly into their workflows.
+- **User-Friendly Interface**: Intuitive design makes it easy to start scans, select templates, and view real-time logs.
+- **Stateless Scanning**: Each scan runs in its own Docker container, ensuring complete isolation and independence.
+- **Extensive Template Support**: Utilizes Nuclei's comprehensive library of templates for various types of vulnerability scans.
+- **Real-Time Logging**: Monitor scan progress and results in real-time with live log streaming.
+- **Auto-Refresh**: Automatically refresh logs for ongoing scans to keep you updated without manual intervention.
+- **Error Handling**: Provides clear and detailed error messages to help diagnose and resolve issues quickly.
+- **Custom Templates**: Upload and use custom templates for tailored scanning needs.
+- **Scalability**: Designed to handle multiple scans simultaneously, ensuring high performance and reliability.
 
-## Features
-
-1. Stateless Architecture
-
-    * Each request is independent and contains all the necessary data for processing.
-
-    * No persistent state is maintained between requests, ensuring scalability and simplicity.
-
-2. Dockerized Scanning
-
-    * Utilizes the official Nuclei Docker image for running scans.
-
-    * Ensures portability and consistency across environments.
-
-3. Template Support
-
-    * Compatible with all official Nuclei templates.
-
-    * Supports mounting custom templates via Docker volume.
-
-4. Target Validation
-
-    * Validates input targets to ensure only proper domains or IPs (with or without HTTP/HTTPS) are scanned.
-
-    * Prevents resource wastage on invalid inputs.
-
-5. Rate Limiting
-
-    * Built-in rate limiting via the FastAPI "slowapi" library.
-
-    * Protects the API from abuse and ensures fair usage.
-
-6. Logging and Debugging
-
-    * Real-time logging of scan results and errors.
-
-    * Easy integration with monitoring systems for operational transparency.
-
-7. Customizable Scan Types
-
-    * Supports all scan types offered by Nuclei, including:
-
-        * CVE scans
-
-        * Misconfiguration scans
-
-        * Information disclosure scans
-
-        * Network scans
-
-8. High Performance
-
-    * Parallel execution of scans using Docker containers.
-
-    * Automatic updates of Nuclei templates on demand.
-
-9. Secure by Design
-
-    * Implements strict input validation to avoid invalid or malicious requests.
-
-    * Runs scans in isolated Docker containers for additional security.
-
-10. Comprehensive API Endpoints
-
-    * GET /: Health check endpoint to verify API availability.
-
-    * POST /nuclei/scan: Run a vulnerability scan with customizable options.
-
-    * GET /nuclei/scan/{container_name}/logs: Fetch scan results.
-
-## API Endpoints
-
-1. Health Check
-
-    *Endpoint*: `GET /`
-
-    *Description*:
-        Returns a simple response to confirm the API is up and running.
-
-    *Response*:
-
-    ```json
-    {
-        "ping": "pong!"
-    }
-    ```
-
-2. Run a Scan
-
-    *Endpoint*: POST /nuclei/scan
-
-    *Description*:
-    Runs a Nuclei vulnerability scan on the specified target.
-
-    *Request Body*:
-
-    ```json
-    {
-        "target": "<https://example.com>",
-        "templates": ["cves/", "vulnerabilities/"] // Optional
-    }
-    ```
-
-    *Parameters*:
-
-    * `target`: (Required) The target domain or IP to scan. Accepts domains with or without HTTP/HTTPS.
-
-    * `templates`: (Optional) List That Specifies the type of scan to run. Defaults to all if not provided.
-
-    *Response*:
-
-    ```json
-    {
-        "status": "success",
-        "results": [
-            "container_name": "nuclei_scan_929753",
-            "message": "Scan started successfully"
-        ]
-    }
-    ```
-
-3. See Scan Results
-
-    *Endpoint*: `GET /nuclei/scan/{container_name}/logs`
-
-    *Description*:
-    API endpoint to stream container logs as a JSON stream.
-
-    *Response*:
-
-    ```json
-    {
-        {'source': 'stderr', 'log': ''},
-        {'source': 'stderr', 'log': '__     _'},
-        {'source': 'stderr', 'log': '____  __  _______/ /__  (_)'},
-        {'source': 'stderr', 'log': '/ __ \\/ / / / ___/ / _ \\/ /'},
-        {'source': 'stderr', 'log': '/ / / / /_/ / /__/ /  __/ /'},
-        {'source': 'stderr', 'log': '/_/ /_/\\__,_/\\___/_/\\___/_/   v3.3.8'},
-        {'source': 'stderr', 'log': ''},
-        {'source': 'stderr', 'log': 'projectdiscovery.io'},
-    }
-    ```
-
-## Installation and Setup
+## Setup Instructions
 
 ### Prerequisites
 
-* Docker + Docker Compose installed on the host machine.
+- **Node.js and npm**: Required for building and running the React frontend.
+- **Python 3.8+**: Required for running the FastAPI backend.
+- **Docker and Docker Compose**: Required for running Nuclei scans in containers.
+- **FastAPI Environment**: For local development of the API.
 
-* FastAPI environment for running the API Locally.
+### Running the Application
 
-### Run In Docker
+#### Frontend (React)
 
-1. Clone the Repository:
+1. **Clone the Repository:**
+
+   ```shell
+   git clone <repository-url>
+   cd nuclei-api/ui
+   ```
+
+2. **Install Dependencies:**
+
+   ```shell
+   npm install
+   ```
+
+3. **Start the Development Server:**
+
+   ```shell
+   npm start
+   ```
+
+   The frontend will be available at `http://localhost:3000`.
+
+#### Backend (FastAPI)
+
+1. **Clone the Repository:**
+
+   ```shell
+   git clone <repository-url>
+   cd nuclei-api
+   ```
+
+2. **Clone Nuclei Templates Repository**
 
     ```shell
-    git clone <repository-url>
-    cd nuclei-api
+    git clone https://github.com/projectdiscovery/nuclei-templates.git
     ```
 
-2. Use Docker Compose to bring the project up and build the image:
+3. **Install Dependencies:**
 
-    ```shell
-    docker compose up -d
-    ```
+   ```shell
+   pip install -r requirements.txt
+   ```
 
-### Running the API
+4. **Run the API:**
 
-1. Clone the Repository:
+   ```shell
+   cd app/
+   python3 main.py
+   ```
 
-    ```shell
-    git clone <repository-url>
-    cd nuclei-api
-    ```
+   The API will be available at `http://localhost:8080`.
 
-2. Install Dependencies:
+#### Using Docker Compose
 
-    ```shell
-    pip install -r requirements.txt
-    ```
+1. **Clone the Repository:**
 
-3. Run the API:
+   ```shell
+   git clone <repository-url>
+   cd nuclei-api
+   ```
 
-    ```shell
-    python3 app/main.py
-    ```
+2. **Build and Run the Containers:**
 
-4. Verify API:
-    * Access "http://{host}:8080/" to ensure the API is running.
+   ```shell
+   docker-compose up -d
+   ```
+
+   This command will start both the frontend and backend services.
 
 ## Usage Examples
 
-### Running a Basic Scan
+### Starting a Scan via UI
+
+1. **Open the UI**: Navigate to `http://localhost:3000`.
+2. **Enter Target URL**: Input the target URL (e.g., `https://example.com`).
+3. **Select Templates**: Choose the desired templates or select "All Templates".
+4. **Start Scan**: Click the "Start Scan" button.
+5. **View Logs**: Monitor the scan logs in real-time.
+
+### Starting a Scan via API
+
+#### Basic Scan
 
 ```shell
-curl -X POST \
--H "Content-Type: application/json" \
--d '{
-    "target": "<https://example.com>",
-    "template": "cves" // Optional
-}' \
-http://<host>:8080/nuclei/scan
+curl -X POST
+-H "Content-Type: application/json"
+-d '{ "target": "https://example.com", "templates": ["cves/"] }'
+http://localhost:8080/nuclei/scan
 ```
 
-### Future Enhancements
+#### Custom Template Scan
 
-1. Authentication
+1. **Upload a Custom Template:**
 
-    * Add API key-based authentication for enhanced security.
+   ```shell
+   curl -X POST \
+   -F "target=https://example.com" \
+   -F "template_file=@/path/to/custom-template.yaml" \
+   http://localhost:8080/nuclei/scan/custom
+   ```
 
-2. Scan Scheduling
+2. **Fetch Scan Logs:**
 
-    * Allow users to schedule scans for specific times.
+   ```shell
+   curl http://localhost:8080/nuclei/scan/nuclei_scan_123456/logs
+   ```
 
-3. Multi-Target Scanning
+## API Documentation
 
-    * Support scanning multiple targets in a single request.
+### Endpoints
 
-For more details or support, please contact our development team.
+#### Health Check
+
+- **Endpoint**: `GET /`
+- **Description**: Returns a simple response to confirm the API is up and running.
+- **Response**:
+
+  ```json
+  {
+      "ping": "pong!"
+  }
+  ```
+
+#### Run a Scan
+
+- **Endpoint**: `POST /nuclei/scan`
+- **Description**: Runs a Nuclei vulnerability scan on the specified target.
+- **Request Body**:
+
+  ```json
+  {
+      "target": "https://example.com",
+      "templates": ["cves/"] // Optional
+  }
+  ```
+
+- **Response**:
+
+  ```json
+  {
+      "container_name": "nuclei_scan_929753",
+      "message": "Scan started successfully"
+  }
+  ```
+
+#### Run a Custom Scan
+
+- **Endpoint**: `POST /nuclei/scan/custom`
+- **Description**: Runs a Nuclei vulnerability scan with a custom template.
+- **Form Data**:
+  - `target`: The target domain or IP to scan.
+  - `template_file`: Custom template YAML file.
+- **Response**:
+
+  ```json
+  {
+      "container_name": "nuclei_scan_929753",
+      "message": "Scan started successfully"
+  }
+  ```
+
+#### Get Scan Logs
+
+- **Endpoint**: `GET /nuclei/scan/{container_id}/logs`
+- **Description**: Fetches logs from a running scan.
+- **Response**:
+
+  ```json
+  {
+      "log": "Nuclei v3.3.8"
+  }
+  ```
+
+## Future Enhancements
+
+1. **Authentication**: Implement API key-based authentication for enhanced security.
+2. **Scan Scheduling**: Allow users to schedule scans for specific times.
+3. **Multi-Target Scanning**: Support scanning multiple targets in a single request.
+
+## Contact
+
+For more details or support, please contact the development team .
