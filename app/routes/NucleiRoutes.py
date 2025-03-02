@@ -1,5 +1,4 @@
-import re, socket, os
-from dotenv import load_dotenv
+import re, socket
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -7,12 +6,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from controllers.NucleiController import NucleiController
 from controllers.DockerController import DockerController
+from controllers.TemplateController import TemplateController
 
-load_dotenv()
-
-nulcei_upload_save_path = os.getenv("NUCLEI_CUSTOM_TEMPLATE_UPLOAD_PATH")
 router = APIRouter()
 nuclei_controller = NucleiController()
+template_controller = TemplateController()
 
 ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
 
@@ -83,24 +81,22 @@ async def run_custom_scan(
         target (str): The target to scan.
         template_file (UploadFile): Custom Template YAML file.
     """
-    
-    # Check if template_file is provided
-    if not template_file or not template_file.filename:
-        raise HTTPException(status_code=400, detail="Invalid template file. No file provided.")
-
-    # Define path to save uploaded template
-    save_path = f"{nulcei_upload_save_path}/{template_file.filename}"
-
-    # Ensure the directory exists
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
-    # Save the uploaded YAML file
-    with open(save_path, "wb") as buffer:
-        buffer.write(await template_file.read())
-
     # Validate target: check if it's a valid domain or IP address
     if not (is_valid_domain(target) or is_valid_ip(target)):
         raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
+    # Validate template file presence and type
+    if not template_file or not template_file.filename:
+        raise HTTPException(status_code=400, detail="No template file provided.")
+    if not template_file.filename.lower().endswith(".yaml"):
+        raise HTTPException(status_code=400, detail="Template must be a .yaml file.")
+    
+    # Read the content as bytes
+    content = await template_file.read()
+    # save the template
+    save_validation =  await template_controller.save_template(content, template_file.filename)
+
+    if save_validation is not None:
+        raise HTTPException(status_code=400, detail=f"Invalid template: {save_validation}")
 
     try:
         # Run Nuclei scan with custom template
@@ -110,7 +106,6 @@ async def run_custom_scan(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    
 @router.get("/scan/{container_id}/logs", response_class=StreamingResponse)
 @limiter.limit("20/minute")
 async def get_logs(container_id: str, request: Request):
@@ -145,3 +140,28 @@ async def get_logs(container_id: str, request: Request):
             yield f"{log}\n"  # Add a newline after each cleaned log
 
     return StreamingResponse(log_stream(), media_type="application/json")
+
+@router.post("/template/upload")
+@limiter.limit("5/minute")
+async def upload_template(request: Request ,template_file: UploadFile = File):
+    """
+    Save a custom Nuclei template.
+
+    Args:
+        template_file (UploadFile): Custom Template YAML file.
+    """
+    # Validate template file presence and type
+    if not template_file or not template_file.filename:
+        raise HTTPException(status_code=400, detail="No template file provided.")
+    if not template_file.filename.lower().endswith(".yaml"):
+        raise HTTPException(status_code=400, detail="Template must be a .yaml file.")
+    
+    content = await template_file.read()
+
+    # save the template
+    save_validation =  await template_controller.save_template(content, template_file.filename)
+
+    if save_validation is not None:
+        raise HTTPException(status_code=400, detail=f"Invalid template: {save_validation}")
+    
+    return {"template_name": template_file.filename, "message": "Template Saved successfully"}
