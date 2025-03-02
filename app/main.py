@@ -12,6 +12,8 @@ load_dotenv()
 
 key = os.getenv("SENTRY_DSN")
 port = os.getenv("APP_PORT")
+env = os.getenv("ENVIRONMENT")
+release_env = os.getenv("RELEASE")
 
 sentry_sdk.init(
     dsn=key,
@@ -24,6 +26,8 @@ sentry_sdk.init(
         # possible.
         "continuous_profiling_auto_start": True,
     },
+    environment=env,
+    release=release_env,
 )
 
 @asynccontextmanager
@@ -35,7 +39,7 @@ app = FastAPI(
     lifespan=lifespan,
     title="Nuclei API",
     description="API for running Nuclei scans using Docker.",
-    version="1.0.0",
+    version="0.1.1",
     openapi_url=None,
     debug=False
 )
