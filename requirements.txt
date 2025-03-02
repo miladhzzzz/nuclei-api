@@ -7,3 +7,6 @@ python-dotenv
 python-multipart
 aiofiles
 asyncio
+celery
+redis
+requests
