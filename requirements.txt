@@ -5,3 +5,5 @@ slowapi
 sentry_sdk
 python-dotenv
 python-multipart
+aiofiles
+asyncio
