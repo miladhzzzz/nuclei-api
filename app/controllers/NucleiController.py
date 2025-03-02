@@ -1,5 +1,6 @@
-import random, os
+import random, os, subprocess, asyncio
 from dotenv import load_dotenv
+from tempfile import NamedTemporaryFile
 from controllers.DockerController import DockerController
 
 load_dotenv()
@@ -68,3 +69,27 @@ class NucleiController:
 
         return {"container_name": container_name, "message": "Scan started successfully"}
     
+    async def validate_template(self, template_content: bytes) -> str | None:
+        """
+        Validate a nuclei template.
+        
+        Args:
+            template_content (bytes): The raw bytes of uploaded nuclei template file.
+        Returns:
+            None: if the template is valid it will return None.
+            str: if the template is invalid it returns the error.
+        """
+        with NamedTemporaryFile(delete=False, suffix=".yaml") as temp_file:
+            temp_file.write(template_content)
+            temp_path = temp_file.name
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "nuclei", "-t", temp_path, "-validate",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            _, stderr = await process.communicate()
+            return None if process.returncode == 0 else stderr.decode()
+        finally:
+            os.unlink(temp_path)
