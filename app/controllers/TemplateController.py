@@ -1,17 +1,50 @@
-import os, aiofiles
+import os, aiofiles, asyncio, yaml
+from tempfile import NamedTemporaryFile
 from dotenv import load_dotenv
-from controllers.NucleiController import NucleiController
 
 load_dotenv()
 
 nulcei_upload_save_path = os.getenv("NUCLEI_CUSTOM_TEMPLATE_UPLOAD_PATH")
 
-nuclei_controller = NucleiController()
 
 class TemplateController():
 
     def __init__(self):
         pass
+
+    def is_nuclei_workflow(self, file_path: str) -> bool:
+        """
+        Check if a YAML file is a Nuclei workflow.
+        
+        Args:
+            file_path (str): Path to the YAML file.
+        Returns:
+            bool: True if it's a workflow, False if it's a template or invalid.
+        """
+        try:
+            with open(file_path, 'r') as f:
+                content = yaml.safe_load(f)
+            
+            if not isinstance(content, dict):
+                return False
+            
+            # Check for workflow-specific keys
+            if 'workflow' in content or 'workflows' in content:
+                return True
+            
+            # Look for templates key in a nested structure
+            for key in content:
+                if isinstance(content[key], dict) and 'templates' in content[key]:
+                    return True
+            
+            # If it has 'id' and 'info' but no workflow markers, it's likely a template
+            if 'id' in content and 'info' in content and 'workflow' not in content:
+                return False
+            
+            return False  # Default to False if unclear
+        except (yaml.YAMLError, FileNotFoundError, Exception) as e:
+            print(f"Error parsing {file_path}: {e}")
+            return False
 
     async def save_template(self, template_file: bytes , template_filename: str):
 
@@ -22,7 +55,7 @@ class TemplateController():
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
         # Validate the template
-        template_validation =  await nuclei_controller.validate_template(template_file)
+        template_validation =  await self.validate_template(template_file)
 
         if template_validation is not None:
             return template_validation
@@ -30,3 +63,31 @@ class TemplateController():
         # Save the validated template asynchronously
         async with aiofiles.open(save_path, "wb") as f:
             await f.write(template_file)
+    
+    async def validate_template(self, template_content: bytes) -> str | None:
+        """
+        Validate a nuclei template.
+        
+        Args:
+            template_content (bytes): The raw bytes of uploaded nuclei template file.
+        Returns:
+            None: if the template is valid it will return None.
+            str: if the template is invalid it returns the error.
+        """
+        with NamedTemporaryFile(delete=False, suffix=".yaml") as temp_file:
+            temp_file.write(template_content)
+            temp_path = temp_file.name
+
+        is_workflow = self.is_nuclei_workflow(temp_path)
+        flag = "-w" if is_workflow else "-t"
+        
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "nuclei", flag, temp_path, "-validate",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            _, stderr = await process.communicate()
+            return None if process.returncode == 0 else stderr.decode()
+        finally:
+            os.unlink(temp_path)
