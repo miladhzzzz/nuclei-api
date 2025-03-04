@@ -1,3 +1,4 @@
+import datetime
 import os
 import requests
 import logging
@@ -12,6 +13,20 @@ logger = logging.getLogger(__name__)
 
 redis_client = redis.Redis(host='redis', port=6379, db=0)
 
+def get_last_seven_days_range():
+    """
+    Returns a tuple of (start_date, end_date) strings for the last 7 days
+    in ISO 8601 format (YYYY-MM-DDTHH:MM:SS)
+    """
+    current_date = datetime.now()
+    end_date = current_date - datetime.timedelta(days=1)  # Yesterday
+    start_date = end_date - datetime.timedelta(days=6)    # 7 days total including end date
+    
+    start_date_str = start_date.strftime("%Y-%m-%dT00:00:00")
+    end_date_str = end_date.strftime("%Y-%m-%dT00:00:00")
+    
+    return start_date_str, end_date_str
+
 # Load prompt template from file
 with open(os.path.join(os.path.dirname(__file__), "template.txt"), "r") as f:
     PROMPT_TEMPLATE = f.read()
@@ -23,13 +38,16 @@ def fetch_vulnerabilities():
     if cached:
         logger.info("Retrieved cached high-severity CVEs from Redis")
         return json.loads(cached)
+    
+    # Get the date range from helper function
+    start_date, end_date = get_last_seven_days_range()
 
     base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
     params = {
         "resultsPerPage": 10,
         "cvssV3Severity": "HIGH",
-        "pubStartDate": "2025-02-24T00:00:00",  # Adjust for your needs
-        "pubEndDate": "2025-03-03T00:00:00",
+        "pubStartDate": start_date,
+        "pubEndDate": end_date,
     }
     logger.info(f"Fetching high-severity CVEs from NVD with params: {params}")
     for attempt in range(3):
