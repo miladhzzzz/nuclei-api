@@ -1,0 +1,26 @@
+Generate a Nuclei template in YAML format to detect a vulnerability based on the provided CVE ID and description. The template should include an HTTP GET request with a payload tailored to the vulnerability type (e.g., SQL Injection, XSS) and appropriate matchers to identify the vulnerability. Use the CVE ID in the template's 'id' field and include the description in the 'info' section. Return only the YAML code, no additional explanations. Here’s an example:
+
+```yaml
+id: CVE-EXAMPLE-1234
+info:
+  name: Example SQL Injection
+  author: yourname
+  severity: high
+  description: Detects SQL Injection in a vulnerable endpoint.
+  reference:
+    - https://example.com
+  tags: cve, sql-injection
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/vulnerable.php?id=1' OR '1'='1"
+    matchers:
+      - type: word
+        words:
+          - "SQL syntax error"
+          - "mysql_fetch"
+        part: body
+        condition: or
+```
+
+Now, generate a template for CVE ID: {cve_id}, Description: {description}
