@@ -47,9 +47,10 @@ const performScan = (target, options) => {
 
 // Scan types mapping
 const scanTypes = {
-  'osAndPortScan': '-A', // Aggressive scan: OS detection, version detection, script scanning, traceroute
-  'quickOsAndPorts': '-O -F -T4', // OS detection, fast port scan, aggressive timing
-  'osOnly': '-O --osscan-limit -T4', // OS detection only, no port scan
+  'aggressiveOsAndPort': '-A', // Aggressive scan: OS detection, version detection, script scanning, traceroute
+  'accurateOsAndPorts': '-O -sV -p 1-65535 --osscan-guess --version-intensity 7 -T3',
+  'quickOsAndPorts': '-O -sV -p 1-1000 -T3', // OS detection, fast port scan, aggressive timing
+  'osOnly': '-O -sV -p 22,80,443,445,3389,8080,139,135 --osscan-guess -T3', // OS detection only, no port scan
   'portsOnly': '-F -T4', // Fast port scan only
 };
 
