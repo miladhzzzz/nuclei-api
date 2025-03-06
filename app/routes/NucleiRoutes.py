@@ -1,8 +1,10 @@
 import re, socket
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, BackgroundTasks
 from fastapi.responses import StreamingResponse
+from celery.result import AsyncResult
+from celery_tasks.tasks import *
 from pydantic import BaseModel, Field
 from controllers.NucleiController import NucleiController
 from controllers.DockerController import DockerController
@@ -66,6 +68,19 @@ async def run_scan(scan_request: ScanRequest, request: Request):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.post("/scan/auto")
+@limiter.limit("5/minute")
+async def start_ai_scan(scan_request: ScanRequest, background_tasks: BackgroundTasks, request: Request):
+    """Start the OS fingerprinting, workflow generation, and scanning pipeline."""
+    ip_address = scan_request.target
+    
+    if not (is_valid_ip(scan_request.target)):
+        raise HTTPException(status_code=400, detail="Invalid target. valid IPv4 address.")
+
+    
+    task = scan_pipeline.delay(ip_address)
+    return {"task_id": task.id, "message": "Scan started"}
 
 @router.post("/scan/custom")
 @limiter.limit("5/minute")
@@ -165,3 +180,10 @@ async def upload_template(request: Request ,template_file: UploadFile = File):
         raise HTTPException(status_code=400, detail=f"Invalid template: {save_validation}")
     
     return {"template_name": template_file.filename, "message": "Template Saved successfully"}
+
+@router.get("/template/generate")
+@limiter.limit("5/minute")
+async def template_generate(background_tasks: BackgroundTasks, request: Request):
+    """Start the workflow generation, and scanning pipeline."""
+    task = generate_templates()
+    return {"task_id": task.id, "message": "generation started started"}
