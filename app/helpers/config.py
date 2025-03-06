@@ -1,10 +1,13 @@
 import os
 from dotenv import load_dotenv
+
 # config class for reading env file and turning it to an object
+load_dotenv()
+
 class Config():
 
     def __init__(self) -> None:
-        load_dotenv()
+        pass
     
     nuclei_upload_template_path = os.getenv("NUCLEI_CUSTOM_TEMPLATE_UPLOAD_PATH")
     nuclei_template_path = os.getenv("NUCLEI_TEMPLATE_PATH")
