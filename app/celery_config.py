@@ -22,10 +22,13 @@ sentry_sdk.init(
 celery_app = Celery(
     'vulnerability_assessment',
     broker=redis_url,
-    backend=redis_url
+    backend=redis_url,
+    include=["celery_tasks.tasks"],
 )
 
-from celery_tasks.tasks import generate_templates
+celery_app.conf.task_serializer = "json"
+celery_app.conf.result_serializer = "json"
+celery_app.conf.accept_content = ["json"]
 
 celery_app.conf.beat_schedule = {
     'generate-templates-every-hour': {
