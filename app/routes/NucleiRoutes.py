@@ -186,4 +186,4 @@ async def upload_template(request: Request ,template_file: UploadFile = File):
 async def template_generate(background_tasks: BackgroundTasks, request: Request):
     """Start the workflow generation, and scanning pipeline."""
     task = generate_templates()
-    return {"task_id": task.id, "message": "generation started started"}
+    return {"task_id": task, "message": "generation started started"}
