@@ -1,5 +1,5 @@
 import datetime , os , requests , logging , time, redis , json
-from herlpers import config
+from helpers import config
 from controllers.FingerprintController import FingerprintController
 from celery_config import celery_app
 from celery import chain
