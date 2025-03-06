@@ -1,28 +1,24 @@
 from celery import Celery
 from celery.schedules import crontab
 from sentry_sdk.integrations.celery import CeleryIntegration
-import sentry_sdk, os
-from dotenv import load_dotenv
+import sentry_sdk
+from helpers.config import Config
 
-load_dotenv()
+conf = Config()
 
-sentry_dsn = os.getenv("SENTRY_DSN")
-env = os.getenv("ENVIRONMENT")
-release = os.getenv("RELEASE")
-redis_url = os.getenv("REDIS_URL")
 
 # Initialize Sentry for Celery processes
 sentry_sdk.init(
-    dsn=sentry_dsn,
+    dsn=conf.sentry_dsn,
     integrations=[CeleryIntegration(monitor_beat_tasks=True)],
-    environment=env,
-    release=release,
+    environment=conf.env,
+    release=conf.release,
 )
 
 celery_app = Celery(
     'vulnerability_assessment',
-    broker=redis_url,
-    backend=redis_url,
+    broker=conf.redis_url,
+    backend=conf.redis_url,
     include=["celery_tasks.tasks"],
 )
 

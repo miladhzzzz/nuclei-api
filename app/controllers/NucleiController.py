@@ -1,17 +1,16 @@
-import random, os, subprocess, asyncio
-from dotenv import load_dotenv
+import random
+from helpers.config import Config
 from tempfile import NamedTemporaryFile
 from controllers.DockerController import DockerController
 from controllers.TemplateController import TemplateController
-
-load_dotenv()
 
 class NucleiController:
     def __init__(self):
         self.docker = DockerController()
         self.template_controller = TemplateController()
+        self.conf = Config()
         self.nuclei_image = "projectdiscovery/nuclei:latest"
-        self.nuclei_template = os.getenv("NUCLEI_TEMPLATE_PATH")
+        self.nuclei_template = self.conf.nuclei_template_path
 
     def generate_scan_id(self) -> int:
         """
