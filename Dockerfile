@@ -20,12 +20,13 @@ RUN wget https://github.com/projectdiscovery/nuclei/releases/download/v3.3.9/nuc
 WORKDIR /app
 
 # Copy the application files into the working directory
-COPY .env ./
 COPY requirements.txt ./
-COPY app/ ./ 
 
 # Install dependencies
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+
+COPY app/ ./ 
+COPY .env ./
 
 # Start the FastAPI application
 CMD ["python3", "main.py"]
