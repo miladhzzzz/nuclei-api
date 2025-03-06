@@ -1,10 +1,6 @@
-import datetime
-import os
-import requests
-import logging
-import time
-import redis
-import json
+import datetime , os , requests , logging , time, redis , json
+from herlpers import config
+from controllers.FingerprintController import FingerprintController
 from celery_config import celery_app
 from celery import chain
 
@@ -13,12 +9,15 @@ logger = logging.getLogger(__name__)
 
 redis_client = redis.Redis(host='redis', port=6379, db=0)
 
+fingerprint_controller = FingerprintController()
+conf = config.Config()
+
 def get_last_seven_days_range():
     """
     Returns a tuple of (start_date, end_date) strings for the last 7 days
     in ISO 8601 format (YYYY-MM-DDTHH:MM:SS)
     """
-    current_date = datetime.now()
+    current_date = datetime.datetime.now()
     end_date = current_date - datetime.timedelta(days=1)  # Yesterday
     start_date = end_date - datetime.timedelta(days=6)    # 7 days total including end date
     
@@ -79,9 +78,11 @@ def process_vulnerabilities(vuln_data):
 def generate_nuclei_templates(processed_data):
     templates = []
     ollama_url = "http://ollama:11434/api/generate"
+    logger.info(f"LLM Model: {conf.llm_model}")
+    
     for item in processed_data:
         payload = {
-            "model": "deepseek-coder",
+            "model": conf.llm_model,
             "prompt": item["prompt"],
             "stream": False
         }
@@ -127,6 +128,19 @@ def store_templates(templates):
         raise
 
 @celery_app.task
+def fingerprint_target(ip_address):
+    """Fingerprint the target IP using an Nmap-based service to detect the OS."""
+    try:
+        response = fingerprint_controller.fingerprint_target(ip_address)
+        if not response:
+            raise ValueError("OS not detected")
+        logger.info(f"Fingerprinting completed for {ip_address}: {response}")
+        return response
+    except requests.RequestException as e:
+        logger.error(f"Fingerprinting failed for {ip_address}: {str(e)}")
+        raise
+
+@celery_app.task
 def generate_templates():
     logger.info("Starting generate_templates pipeline")
     # Chain tasks asynchronously
@@ -138,3 +152,14 @@ def generate_templates():
     )
     workflow.apply_async()
     logger.info("Generate_templates pipeline queued")
+
+@celery_app.task
+def scan_pipeline(ip_address):
+    logger.info("Starting Fingerprint the target")
+    """Chain the fingerprinting, workflow generation, and scanning tasks."""
+    task_chain = chain (
+        fingerprint_target.s(ip_address),
+        # generate_workflow.s(),
+        # run_nuclei_scan.s(ip_address),
+    )
+    return task_chain.apply_async()
