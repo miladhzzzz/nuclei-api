@@ -1,0 +1,136 @@
+services:
+  nuclei-api:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://loki:3100/loki/api/v1/push"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./nuclei-templates:/root/nuclei-templates
+    privileged: true
+    restart: unless-stopped
+
+  redis:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://loki:3100/loki/api/v1/push"
+    image: redis:6
+    ports: []
+      # - "6379:6379"
+    restart: unless-stopped
+
+  celery_worker:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://loki:3100/loki/api/v1/push"
+    build: .
+    command: celery -A celery_config:celery_app worker --loglevel=info --concurrency=1
+    privileged: true
+    depends_on:
+      - redis
+    volumes:
+      - ./nuclei-templates/ai:/app/templates
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    
+  celery_beat:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://loki:3100/loki/api/v1/push"
+    build: .
+    command: celery -A celery_config:celery_app beat --loglevel=info
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  flower:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://loki:3100/loki/api/v1/push"
+    image: mher/flower
+    command: celery --broker=redis://redis:6379/0 flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - FLOWER_UNAUTHENTICATED_API=true
+    depends_on:
+      - redis
+      - celery_worker
+    restart: unless-stopped
+
+  ollama:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://loki:3100/loki/api/v1/push"
+    image: ollama/ollama
+    ports: []
+      # - "11434:11434"  # Ollama API port
+    volumes:
+      - ollama-data:/root/.ollama  # Persist models
+      - ./etc/entrypoint.sh:/entrypoint.sh
+    entrypoint: ["/usr/bin/sh", "/entrypoint.sh"]
+    restart: unless-stopped
+
+  open-webui:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://loki:3100/loki/api/v1/push"
+    image: ghcr.io/open-webui/open-webui:main
+    ports:
+      - "3331:8080"  # Open WebUI runs on 8080 internally, mapped to 3000
+    volumes:
+      - open-webui-data:/app/backend/data  # Persist Open WebUI data
+    environment:
+      - OLLAMA_API_BASE_URL=http://ollama:11434  # Connect to Ollama
+    depends_on:
+      - ollama
+
+  nuclei-fingerprint:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://loki:3100/loki/api/v1/push"
+    build:
+      context: ./fingerprint-service
+      dockerfile: Dockerfile
+    depends_on:
+      - nuclei-api
+    ports: []
+      # - "3330:3000"
+    restart: unless-stopped
+
+  loki:
+      image: grafana/loki:3.4.2
+      ports:
+        - "3100:3100"
+      restart: unless-stopped
+      command: -config.file=/etc/loki/loki.yml
+      volumes:
+        - loki_data:/tmp/loki
+        - ./loki:/etc/loki
+
+  # nuclei-ui:
+  #   build:
+  #     context: ./ui
+  #     dockerfile: Dockerfile
+  #   depends_on:
+  #     - nuclei-api
+  #   ports:
+  #     - "3000:80"
+  #   restart: unless-stopped
+
+volumes:
+  ollama-data:
+  open-webui-data:
+  loki_data:
