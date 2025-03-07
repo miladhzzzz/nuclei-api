@@ -17,3 +17,4 @@ class Config():
     release = os.getenv("RELEASE")
     redis_url = os.getenv("REDIS_URL")
     llm_model = os.getenv("LLM_MODEL")
+    shodan_api_key = os.getenv("SHODAN_API_KEY")
