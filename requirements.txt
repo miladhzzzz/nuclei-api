@@ -10,3 +10,4 @@ asyncio
 celery
 redis
 requests
+pyyaml
