@@ -23,6 +23,9 @@ services:
     privileged: true
     depends_on:
       - redis
+    deploy:
+      mode: replicated
+      replicas: 2
     volumes:
       - ./nuclei-templates/ai:/app/templates
       - /var/run/docker.sock:/var/run/docker.sock
@@ -49,8 +52,8 @@ services:
 
   ollama:
     image: ollama/ollama
-    ports: []
-      # - "11434:11434"  # Ollama API port
+    ports: 
+       - "11434:11434"  # Ollama API port
     volumes:
       - ollama-data:/root/.ollama  # Persist models
       - ./etc/entrypoint.sh:/entrypoint.sh
@@ -72,10 +75,10 @@ services:
     build:
       context: ./fingerprint-service
       dockerfile: Dockerfile
-    depends_on:
-      - nuclei-api
-    ports: []
-      # - "3330:3000"
+    depends_on: []
+      # - nuclei-api
+    ports: 
+       - "3330:3000"
     restart: unless-stopped
 
   loki:
