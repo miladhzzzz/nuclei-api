@@ -99,6 +99,12 @@ class DockerController:
         command = f"docker stats --no-stream {container_id_or_name}"
         return self._run_command(command)
 
+    def container_status(self, container_id_or_name):
+        """Inspect a container and retrieve detailed information."""
+        command = f"docker inspect --format='{{.State.Status}}' {container_id_or_name}"
+        result = self._run_command(command)
+        return result if result else None
+
     def container_inspect(self, container_id_or_name):
         """Inspect a container and retrieve detailed information."""
         command = f"docker inspect {container_id_or_name}"
