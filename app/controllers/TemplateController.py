@@ -1,4 +1,6 @@
 import os, aiofiles, asyncio, yaml
+from typing import Optional
+import subprocess
 from tempfile import NamedTemporaryFile
 from helpers.config import Config
 
@@ -88,3 +90,26 @@ class TemplateController():
             return None if process.returncode == 0 else stderr.decode()
         finally:
             os.unlink(temp_path)
+
+    def validate_template_cel(self, template_path: str) -> Optional[str]:
+        """
+        Synchronously validate a Nuclei template or workflow.
+        Returns None if valid, or an error message if invalid.
+        """
+        is_workflow = self.is_nuclei_workflow(template_path)
+        flag = "-w" if is_workflow else "-t"
+
+        try:
+            # Run the nuclei command synchronously
+            process = subprocess.run(
+                ["nuclei", flag, template_path, "-validate"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,  # Decode output as text (str) instead of bytes
+                check=False  # Don't raise an exception on non-zero exit code
+            )
+            # Return None if successful (returncode == 0), otherwise return stderr
+            return None if process.returncode == 0 else process.stderr
+        except Exception as e:
+            # Handle any subprocess errors (e.g., nuclei not found)
+            return str(e)
