@@ -34,14 +34,14 @@ class NucleiController:
         result = self.docker.pull_image(self.nuclei_image)
         return {"message": "Image pulled successfully", "details": result}
 
-    def run_nuclei_scan(self, target: str, template: list = None, template_file=None):
+    def run_nuclei_scan(self, target: str, template: list = None, template_file=None, cve_id:str = None):
         """
         Run a Nuclei scan in a Docker container.
         
         Args:
             target (str): The target to scan.
             template (list): Optional templates to use for the scan.
-            template_file (UploadFile): Custom Template YAML file.
+            template_file (str): template path.
         Returns:
             dict: Container Name or error message.
         """
@@ -54,6 +54,13 @@ class NucleiController:
             is_workflow = self.template_controller.is_nuclei_workflow(template_file)
             flag = "-w" if is_workflow else "-t"
             command += [flag, f"custom/{template_file}"]
+
+        if cve_id:
+            volumes = {f"{self.nuclei_template}": "/root/nuclei-templates"}
+            # Detect if it's a workflow or template
+            is_workflow = self.template_controller.is_nuclei_workflow(template_file)
+            flag = "-w" if is_workflow else "-t"
+            command += [flag ,f"ai/{cve_id}.yaml"]
 
         if template and template != ["."]:
             command += ["-t"] + template
