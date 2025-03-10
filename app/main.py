@@ -4,6 +4,7 @@ from fastapi import FastAPI
 import uvicorn, sentry_sdk, os
 from fastapi.middleware.cors import CORSMiddleware
 from routes.NucleiRoutes import router as nuclei_router
+from routes.PipelineRoutes import router as pipeline_router
 from controllers.NucleiController import NucleiController
 
 nco = NucleiController()
@@ -47,6 +48,7 @@ app.add_middleware(
 
 # Register routes
 app.include_router(nuclei_router, prefix="/nuclei", tags=["Nuclei"])
+app.include_router(pipeline_router, prefix="/pipeline", tags=["Celery Pipeline"])
 
 # This is for healthchecks disable if you dont want to do health checks
 @app.get("/")
