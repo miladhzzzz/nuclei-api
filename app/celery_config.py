@@ -29,6 +29,6 @@ celery_app.conf.accept_content = ["json"]
 celery_app.conf.beat_schedule = {
     'generate-templates-every-hour': {
         'task': 'celery_tasks.tasks.generate_templates',
-        'schedule': crontab(minute= 0, hour='*/1'),
+        'schedule': crontab(minute= 0, hour='*/12'),
     },
 }
