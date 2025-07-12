@@ -1,4 +1,5 @@
 import re, socket
+from typing import Optional
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, BackgroundTasks
@@ -45,81 +46,123 @@ def is_valid_ip(value: str) -> bool:
 # Pydantic model for the scan request
 class ScanRequest(BaseModel):
     target: str = Field(..., example="google.com")  # Relaxed regex to allow letters, numbers, dots, hyphens
-    templates: list = Field(None, example="cves/")  # Optional template field   
+    templates: list = Field(None, example="cves/")  # Optional template field
+    prompt: str = Field(None, example="run a scan for finding this CVE on this Operating system") # Optional prompt field
+
 # Pydantic model to validate 'get_logs' parameters
 class ContainerIDRequest(BaseModel):
     container_id: str = Field(..., example="nuclei_scan_123456", pattern=r"^nuclei_scan_\d{6}$")  # Must start with 'nuclei_scan_' followed by 6 digits
 
 @router.post("/scan")
 @limiter.limit("5/minute")
-async def run_scan(scan_request: ScanRequest, request: Request):
-    """
-    Start a Nuclei scan for the given target.
-    
-    Args:
-        target (str): The target to scan.
-        template (list): Optional templates to use.
-    """
-    # Validate target: check if it's a valid domain or IP address
+async def custom_scan(request: Request, background_task: BackgroundTasks, scan_request: ScanRequest ):
+
     if not (is_valid_domain(scan_request.target) or is_valid_ip(scan_request.target)):
         raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
-    try:
-        result = nuclei_controller.run_nuclei_scan(scan_request.target, scan_request.templates)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-@router.post("/scan/auto")
-@limiter.limit("5/minute")
-async def start_ai_scan(scan_request: ScanRequest, background_tasks: BackgroundTasks, request: Request):
-    """Start the OS fingerprinting, workflow generation, and scanning pipeline."""
-    ip_address = scan_request.target
-    
-    if not (is_valid_ip(scan_request.target)):
-        raise HTTPException(status_code=400, detail="Invalid target. valid IPv4 address.")
+    is_ip = is_valid_ip(scan_request.target)
 
-    
-    task = scan_pipeline.delay(ip_address)
-    return {"task_id": task.id, "message": "Scan started"}
+    if scan_request.prompt:
+        print("")
+        
+    if scan_request.templates:
+        template_list = scan_request.templates
+    # IP scan with pipeline (async, includes fingerprinting)
+    if is_ip:
+        task = scan_pipeline.delay(scan_request.target, templates=template_list)
+        return {"task_id": task.id, "message": "Scan pipeline started"}
+    # Standard scan for domains (sync, no fingerprinting)
+    else:
+        try:
+            result = nuclei_controller.run_nuclei_scan(scan_request.target, template=template_list)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Standard scan failed: {str(e)}")
+
 
 @router.post("/scan/custom")
 @limiter.limit("5/minute")
-async def run_custom_scan(
+async def unified_scan(
+    background_tasks: BackgroundTasks,
     request: Request,
-    target: str = Form(...),  # Required form field
-    template_file: UploadFile = File(None)  # Optional file upload
+    target: str = Form(...),
+    templates: Optional[list] = Form(default=None),  # Comma-separated string for simplicity
+    template_file: Optional[UploadFile] = File(default=None),
 ):
     """
-    Start a custom Nuclei scan for the given target with a custom template.
+    Unified endpoint to start a Nuclei scan (standard, AI-driven, or custom).
 
     Args:
-        target (str): The target to scan.
-        template_file (UploadFile): Custom Template YAML file.
+        target (str): The target to scan (domain or IP).
+        templates (str, optional): Comma-separated list of templates for standard scan (e.g., "cves/,http/").
+        template_file (UploadFile, optional): Custom YAML template file for custom scan.
+
+    Returns:
+        dict: Task ID and message for async scans, or direct result for synchronous scans.
     """
-    # Validate target: check if it's a valid domain or IP address
+    # Validate target
     if not (is_valid_domain(target) or is_valid_ip(target)):
         raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
-    # Validate template file presence and type
-    if not template_file or not template_file.filename:
-        raise HTTPException(status_code=400, detail="No template file provided.")
-    if not template_file.filename.lower().endswith(".yaml"):
-        raise HTTPException(status_code=400, detail="Template must be a .yaml file.")
-    
-    # Read the content as bytes
-    content = await template_file.read()
-    # save the template
-    save_validation =  await template_controller.save_template(content, template_file.filename)
 
-    if save_validation is not None:
-        raise HTTPException(status_code=400, detail=f"Invalid template: {save_validation}")
+    is_ip = is_valid_ip(target)
+    template_list = templates.split(",") if templates else None
 
-    try:
-        # Run Nuclei scan with custom template
-        name = template_file.filename.strip()
-        result = nuclei_controller.run_nuclei_scan(target, template_file=name)
-        return result 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # Custom scan with uploaded template
+    if template_file:
+        if not template_file.filename.lower().endswith(".yaml"):
+            raise HTTPException(status_code=400, detail="Template must be a .yaml file.")
+        content = await template_file.read()
+        save_validation = await template_controller.save_template(content, template_file.filename)
+        if save_validation:
+            raise HTTPException(status_code=400, detail=f"Invalid template: {save_validation}")
+        try:
+            result = nuclei_controller.run_nuclei_scan(target, template_file=template_file.filename)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Custom scan failed: {str(e)}")
+        
+    # IP scan with pipeline (async, includes fingerprinting)
+    elif is_ip:
+        task = scan_pipeline.delay(target, templates=template_list)
+        return {"task_id": task.id, "message": "Scan pipeline started"}
+
+    # Standard scan for domains (sync, no fingerprinting)
+    else:
+        try:
+            result = nuclei_controller.run_nuclei_scan(target, template=template_list)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Standard scan failed: {str(e)}")
+
+@router.get("/task/{task_id}")
+async def get_task_status(task_id: str):
+    """
+    Retrieve the status and result of an asynchronous scan task.
+
+    Args:
+        task_id (str): The Celery task ID returned by the /scan endpoint.
+
+    Returns:
+        dict: Task status and result (if completed).
+
+    Authentication:
+        Requires a valid JWT token in the Authorization header (Bearer <token>).
+    """
+    task_result = AsyncResult(task_id)
+    if not task_result:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    response = {
+        "task_id": task_id,
+        "status": task_result.status,  # PENDING, STARTED, SUCCESS, FAILURE, etc.
+    }
+
+    if task_result.ready():
+        if task_result.successful():
+            response["result"] = task_result.result  # Container name or scan output
+        else:
+            response["error"] = str(task_result.result)  # Exception message if failed
+
+    return response
 
 @router.get("/scan/{container_id}/logs", response_class=StreamingResponse)
 @limiter.limit("20/minute")
@@ -181,9 +224,21 @@ async def upload_template(request: Request ,template_file: UploadFile = File):
     
     return {"template_name": template_file.filename, "message": "Template Saved successfully"}
 
+
 @router.get("/template/generate")
-@limiter.limit("5/minute")
-async def template_generate(background_tasks: BackgroundTasks, request: Request):
-    """Start the workflow generation, and scanning pipeline."""
-    task = generate_templates()
-    return {"task_id": task, "message": "generation started started"}
+@limiter.limit("1/minute")
+async def template_generate(request: Request):
+    """
+    Trigger the Nuclei template generation pipeline asynchronously.
+    Returns the task ID for tracking.
+    """
+    try:
+        # Trigger the Celery task asynchronously
+        task_result: AsyncResult = generate_templates.delay()
+        logger.info(f"Triggered template generation task with ID: {task_result.id}")
+        
+        # Return the task ID in the response for client tracking
+        return {"task_id": task_result.id, "status": "Task queued successfully"}
+    except Exception as e:
+        logger.error(f"Failed to trigger template generation task: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to start task: {str(e)}")

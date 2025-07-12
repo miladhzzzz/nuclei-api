@@ -104,7 +104,7 @@ def fetch_vulnerabilities(self) -> List[Dict[str, Any]]:
         {
             "name": "NVD",
             "url": "https://services.nvd.nist.gov/rest/json/cves/2.0",
-            "params": {"resultsPerPage": 100, "cvssV3Severity": "HIGH", "pubStartDate": start_date, "pubEndDate": end_date}
+            "params": {"resultsPerPage": 500, "cvssV3Severity": "HIGH", "pubStartDate": start_date, "pubEndDate": end_date}
         },
         {
             "name": "CISA KEV",
@@ -236,7 +236,7 @@ def get_vulnerable_hosts(cve_id: str) -> List[str]:
         "CVE-2021-1234": ["example.com", "test.vuln"],
         "CVE-2022-5678": ["vuln.host"]
     }
-    return mock_hosts.get(cve_id, ["honey.scanme.sh"])
+    return mock_hosts.get(cve_id, default=["honey.scanme.sh"])
 
 @celery_app.task
 def store_refined_template(cve_id: str, refined_template: str) -> Dict[str, str]:
@@ -268,7 +268,7 @@ def validate_template(cve_id: str, template_file: str, max_attempts: int = 3, at
 
     # Initialize CVE metrics if not present
     if not redis_client.hexists(cve_metrics_key, "attempts"):
-        redis_client.hset(cve_metrics_key, mapping={"attempts": 0, "refinements": 0, "validated": 0, "scan_success": 0})
+        redis_client.hset(cve_metrics_key, mapping={"attempts": 0, "refinements": 0, "validated": 0, "scan_success": 0, "no_result":0})
 
     if not hosts:
         redis_client.hincrby(cve_metrics_key, "attempts", 1)
@@ -313,8 +313,8 @@ def validate_template(cve_id: str, template_file: str, max_attempts: int = 3, at
             container_status = docker_controller.container_status(container_name)
 
         logs = docker_controller.stream_container_logs(container_name)
-        for line in logs.splitlines():
-            if "[info]" in line and "matched" in line:
+        for line in logs:
+            if "[INF]" in line and "matched" in line:
                 logger.info(f"Validated template for {cve_id} on attempt {attempt}")
                 redis_client.hset(cve_metrics_key, "scan_success", 1)
                 redis_client.hincrby(cve_metrics_key, "attempts", 1)
@@ -322,6 +322,10 @@ def validate_template(cve_id: str, template_file: str, max_attempts: int = 3, at
                 duration = time.time() - start_time
                 redis_client.hincrby(global_metrics_key, "total_validation_duration", int(duration * 1000))  # ms
                 return {"status": "success", "attempts": attempt}
+            # Scan did not find anything
+            if "[INF]" in line and "No results found. Better luck next time!" in line:
+                logger.info(f"Did not find anything scanning:{cve_id}")
+                redis_client.hset(global_metrics_key, "no_result", 1)
 
         # No match found
         redis_client.hincrby(cve_metrics_key, "attempts", 1)
@@ -362,21 +366,6 @@ def validate_template(cve_id: str, template_file: str, max_attempts: int = 3, at
             redis_client.hincrby(global_metrics_key, "failed_validations", 1)
             duration = time.time() - start_time
             redis_client.hincrby(global_metrics_key, "total_validation_duration", int(duration * 1000))  # ms
-            return {"status": "failed", "reason": "Max attempts reached"}
-
-    except Exception as e:
-        logger.error(f"Validation failed for {cve_id}: {e}")
-        if attempt < max_attempts:
-            refinement_chain = chain(
-                refine_nuclei_template.s(cve_id, template_content, str(e)),
-                store_refined_template.s(cve_id),
-                validate_template.s(cve_id, max_attempts=max_attempts, attempt=attempt + 1)
-            )
-            refinement_chain.apply_async()
-            logger.info(f"Queued refinement and retry for {cve_id} due to error on attempt {attempt}")
-            return {"status": "pending", "reason": "Refinement and retry queued"}
-        else:
-            logger.info(f"Validation failed for {cve_id} after {max_attempts} attempts")
             return {"status": "failed", "reason": "Max attempts reached"}
 
 @celery_app.task
@@ -441,7 +430,7 @@ def generate_templates() -> None:
     logger.info("Template generation and validation pipeline queued")
 
 @celery_app.task
-def scan_pipeline(target: str, templates: Optional[List[str]] = None, template_file: Optional[str] = None, prompt: Optional[str] = None) -> Any:
+def fingerprint_scan_pipeline(target: str, templates: Optional[List[str]] = None, template_file: Optional[str] = None) -> Any:
     """
     Chain fingerprinting and scanning tasks.
     """
@@ -450,5 +439,19 @@ def scan_pipeline(target: str, templates: Optional[List[str]] = None, template_f
     task_chain = chain(
         fingerprint_target.s(target),
         run_nuclei_scan.s(target=target, templates=templates, template_file=template_file)
+    )
+    return task_chain.apply_async()
+
+@celery_app.task
+def ai_scan_pipeline(target: str, prompt: Optional[str] = None) -> Any:
+    """
+    Chain fingerprinting and scanning tasks.
+    """
+    logger.info(f"Starting scan pipeline for {target}")
+
+    task_chain = chain(
+        fingerprint_target.s(target),
+        generate_nuclei_template.s(None, prompt),
+        run_nuclei_scan.s(target=target),
     )
     return task_chain.apply_async()
