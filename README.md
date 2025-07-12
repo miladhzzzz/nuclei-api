@@ -1,211 +1,255 @@
-# Nuclei Scanner UI and API Documentation
+# Nuclei API: Automated Vulnerability Template Generation & Scanning Platform
 
 ## Overview
 
-The Nuclei Scanner is a web-based application that provides a user-friendly interface for initiating and managing vulnerability scans using the Nuclei tool. The application is built using React for the frontend and FastAPI for the backend, with Docker used to run Nuclei scans in isolated containers. This setup ensures that each scan is stateless and independent, enhancing performance and security.
+**Nuclei API** is an advanced, AI-augmented platform for automated vulnerability scanning and template management, built around [Nuclei](https://nuclei.projectdiscovery.io/). It provides a REST API for running scans, managing templates, and orchestrating a pipeline that fetches new vulnerabilities, generates detection templates using an LLM, validates them, and refines them as needed. The system leverages FastAPI, Celery, Redis, Docker, and Ollama (LLM) to deliver scalable, intelligent, and automated security scanning.
 
-### Key Features
+---
 
-- **User-Friendly Interface**: Intuitive design makes it easy to start scans, select templates, and view real-time logs.
-- **Stateless Scanning**: Each scan runs in its own Docker container, ensuring complete isolation and independence.
-- **Extensive Template Support**: Utilizes Nuclei's comprehensive library of templates for various types of vulnerability scans.
-- **Real-Time Logging**: Monitor scan progress and results in real-time with live log streaming.
-- **Auto-Refresh**: Automatically refresh logs for ongoing scans to keep you updated without manual intervention.
-- **Error Handling**: Provides clear and detailed error messages to help diagnose and resolve issues quickly.
-- **Custom Templates**: Upload and use custom templates for tailored scanning needs.
-- **Scalability**: Designed to handle multiple scans simultaneously, ensuring high performance and reliability.
+## Key Features
+
+- **Automated CVE Template Generation:**  
+  Fetches recent vulnerabilities (CVEs) from public sources and uses an LLM to generate Nuclei YAML templates for each.
+- **Template Validation & Refinement:**  
+  Validates generated templates by running them against known vulnerable hosts. If validation fails, templates are refined using the LLM and retried.
+- **Flexible Scanning API:**  
+  Exposes endpoints to run Nuclei scans on targets (IP/domain), with support for custom templates, AI-generated templates, and standard templates.
+- **Asynchronous Pipeline:**  
+  Uses Celery for distributed, asynchronous task orchestration (fetching, generating, validating, refining).
+- **Metrics & Caching:**  
+  Uses Redis for caching vulnerability data and tracking pipeline metrics.
+- **Containerized Scanning:**  
+  Runs Nuclei scans in Docker containers for isolation and resource control.
+- **Custom Template Support:**  
+  Upload and use your own Nuclei templates.
+- **Real-Time Log Streaming:**  
+  Stream scan logs directly from running Docker containers.
+- **Extensible & Modular:**  
+  Modular controllers for Docker, Nuclei, Fingerprinting, and Templates.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph User
+        A1[API Client / UI]
+    end
+    subgraph API
+        B1[FastAPI App]
+        B2[NucleiRoutes]
+        B3[PipelineRoutes]
+    end
+    subgraph Celery
+        C1[fetch_vulnerabilities]
+        C2[process_vulnerabilities]
+        C3[generate_nuclei_template]
+        C4[store_templates]
+        C5[validate_template]
+        C6[refine_nuclei_template]
+    end
+    subgraph Services
+        D1[Ollama LLM]
+        D2[Redis]
+        D3[Docker Engine]
+        D4[Nuclei Scanner]
+    end
+
+    A1--REST-->B1
+    B1--routes-->B2
+    B1--routes-->B3
+    B2--triggers-->Celery
+    B3--triggers-->Celery
+    C1--uses-->D2
+    C2--uses-->D1
+    C3--uses-->D1
+    C4--stores-->FileSystem
+    C5--runs-->D4
+    C5--in-->D3
+    C5--metrics-->D2
+    C6--uses-->D1
+    D4--runs in-->D3
+```
+
+---
+
+## Pipeline Flow
+
+```mermaid
+flowchart TD
+    A[fetch_vulnerabilities] --> B[process_vulnerabilities]
+    B --> C[generate_nuclei_templates (group)]
+    C --> D[store_templates]
+    D --> E[validate_templates_callback (group)]
+    E --> F[validate_template (per template)]
+    F --fail--> G[refine_nuclei_template]
+    G --> H[store_refined_template]
+    H --> F
+    F --success--> I[Done]
+```
+
+---
 
 ## Setup Instructions
 
 ### Prerequisites
 
-- **Node.js and npm**: Required for building and running the React frontend.
-- **Python 3.8+**: Required for running the FastAPI backend.
-- **Docker and Docker Compose**: Required for running Nuclei scans in containers.
-- **FastAPI Environment**: For local development of the API.
+- **Python 3.8+**
+- **Docker & Docker Compose**
+- **Redis**
+- **Ollama (or compatible LLM API)**
+- *(Optional)* **Node.js & npm** (if using the UI)
 
-### Running the Application
+### Clone the Repository
 
-#### Frontend (React)
+```sh
+git clone <repository-url>
+cd nuclei-api
+```
 
-1. **Clone the Repository:**
+### Install Python Dependencies
 
-   ```shell
-   git clone <repository-url>
-   cd nuclei-api/ui
-   ```
+```sh
+pip install -r requirements.txt
+```
 
-2. **Install Dependencies:**
+### Clone Nuclei Templates
 
-   ```shell
-   npm install
-   ```
+```sh
+git clone https://github.com/projectdiscovery/nuclei-templates.git
+```
 
-3. **Start the Development Server:**
+### Start Redis and Ollama
 
-   ```shell
-   npm start
-   ```
+You can use Docker Compose to start all services (API, Redis, Ollama, etc.):
 
-   The frontend will be available at `http://localhost:3000`.
+```sh
+docker-compose up -d
+```
 
-#### Backend (FastAPI)
+Or start them individually as needed.
 
-1. **Clone the Repository:**
+### Run the API
 
-   ```shell
-   git clone <repository-url>
-   cd nuclei-api
-   ```
+```sh
+cd app/
+python3 main.py
+```
 
-2. **Clone Nuclei Templates Repository**
+The API will be available at `http://localhost:8080`.
 
-    ```shell
-    git clone https://github.com/projectdiscovery/nuclei-templates.git
-    ```
-
-3. **Install Dependencies:**
-
-   ```shell
-   pip install -r requirements.txt
-   ```
-
-4. **Run the API:**
-
-   ```shell
-   cd app/
-   python3 main.py
-   ```
-
-   The API will be available at `http://localhost:8080`.
-
-#### Using Docker Compose
-
-1. **Clone the Repository:**
-
-   ```shell
-   git clone <repository-url>
-   cd nuclei-api
-   ```
-
-2. **Build and Run the Containers:**
-
-   ```shell
-   docker-compose up -d
-   ```
-
-   This command will start both the frontend and backend services.
+---
 
 ## Usage Examples
 
-### Starting a Scan via UI
+### 1. **Trigger the Automated Template Generation Pipeline**
 
-1. **Open the UI**: Navigate to `http://localhost:3000`.
-2. **Enter Target URL**: Input the target URL (e.g., `https://example.com`).
-3. **Select Templates**: Choose the desired templates or select "All Templates".
-4. **Start Scan**: Click the "Start Scan" button.
-5. **View Logs**: Monitor the scan logs in real-time.
+```sh
+curl -X GET http://localhost:8080/nuclei/template/generate
+```
+This will fetch new CVEs, generate templates using the LLM, store, and validate them.
 
-### Starting a Scan via API
+### 2. **Run a Scan (API)**
 
 #### Basic Scan
 
-```shell
-curl -X POST
--H "Content-Type: application/json"
--d '{ "target": "https://example.com", "templates": ["cves/"] }'
-http://localhost:8080/nuclei/scan
+```sh
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{ "target": "https://example.com", "templates": ["cves/"] }' \
+  http://localhost:8080/nuclei/scan
 ```
 
 #### Custom Template Scan
 
-1. **Upload a Custom Template:**
+```sh
+curl -X POST \
+  -F "target=https://example.com" \
+  -F "template_file=@/path/to/custom-template.yaml" \
+  http://localhost:8080/nuclei/scan/custom
+```
 
-   ```shell
-   curl -X POST \
-   -F "target=https://example.com" \
-   -F "template_file=@/path/to/custom-template.yaml" \
-   http://localhost:8080/nuclei/scan/custom
-   ```
+#### Fetch Scan Logs
 
-2. **Fetch Scan Logs:**
+```sh
+curl http://localhost:8080/nuclei/scan/nuclei_scan_123456/logs
+```
 
-   ```shell
-   curl http://localhost:8080/nuclei/scan/nuclei_scan_123456/logs
-   ```
+---
 
-## API Documentation
+## API Endpoints
 
-### Endpoints
+### Health Check
 
-#### Health Check
+- **GET /**  
+  Returns `{ "ping": "pong!" }`
 
-- **Endpoint**: `GET /`
-- **Description**: Returns a simple response to confirm the API is up and running.
-- **Response**:
+### Run a Scan
 
+- **POST /nuclei/scan**  
+  Request:
   ```json
   {
-      "ping": "pong!"
+    "target": "https://example.com",
+    "templates": ["cves/"] // Optional
   }
   ```
+  Response:  
+  Returns scan result or task ID for async scans.
 
-#### Run a Scan
+### Run a Custom Scan
 
-- **Endpoint**: `POST /nuclei/scan`
-- **Description**: Runs a Nuclei vulnerability scan on the specified target.
-- **Request Body**:
+- **POST /nuclei/scan/custom**  
+  Form Data:
+    - `target`: The target domain or IP to scan.
+    - `template_file`: Custom template YAML file (optional).
+    - `templates`: Comma-separated list of templates (optional).
 
-  ```json
-  {
-      "target": "https://example.com",
-      "templates": ["cves/"] // Optional
-  }
-  ```
+### Get Scan Logs
 
-- **Response**:
+- **GET /nuclei/scan/{container_id}/logs**  
+  Streams logs from the running scan container.
 
-  ```json
-  {
-      "container_name": "nuclei_scan_929753",
-      "message": "Scan started successfully"
-  }
-  ```
+### Upload a Custom Template
 
-#### Run a Custom Scan
+- **POST /nuclei/template/upload**  
+  Upload and validate a custom Nuclei template.
 
-- **Endpoint**: `POST /nuclei/scan/custom`
-- **Description**: Runs a Nuclei vulnerability scan with a custom template.
-- **Form Data**:
-  - `target`: The target domain or IP to scan.
-  - `template_file`: Custom template YAML file.
-- **Response**:
+### Trigger Template Generation Pipeline
 
-  ```json
-  {
-      "container_name": "nuclei_scan_929753",
-      "message": "Scan started successfully"
-  }
-  ```
+- **GET /nuclei/template/generate**  
+  Starts the full CVE-to-template pipeline.
 
-#### Get Scan Logs
+---
 
-- **Endpoint**: `GET /nuclei/scan/{container_id}/logs`
-- **Description**: Fetches logs from a running scan.
-- **Response**:
+## Metrics & Monitoring
 
-  ```json
-  {
-      "log": "Nuclei v3.3.8"
-  }
-  ```
+- **Redis** is used for caching vulnerability data and tracking pipeline metrics (templates generated, validated, refinements, failures, etc.).
+- **Sentry** integration is available for error monitoring (configure via environment).
 
-## Future Enhancements
+---
 
-1. **Authentication**: Implement API key-based authentication for enhanced security.
-2. **Scan Scheduling**: Allow users to schedule scans for specific times.
-3. **Multi-Target Scanning**: Support scanning multiple targets in a single request.
+## Extending & Customizing
+
+- **Add new vulnerability sources** by editing the `fetch_vulnerabilities` task.
+- **Change LLM model or endpoint** via configuration.
+- **Integrate with your own UI** or use the provided API directly.
+
+---
+
+## Contributing
+
+Contributions are welcome! Please open issues or pull requests for bug fixes, new features, or improvements.
+
+---
+
+## License
+
+[MIT](LICENSE) or as specified in the repository.
+
+---
 
 ## Contact
 
-For more details or support, please contact the development team .
+For more details or support, please contact the development team.
