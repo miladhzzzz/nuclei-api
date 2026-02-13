@@ -1,0 +1,19 @@
+The following Nuclei template has validation errors and needs to be fixed. Please correct the YAML syntax and structure issues.
+
+CVE ID: {cve_id}
+Validation Error: {validation_error}
+
+Current Template:
+```yaml
+{current_template}
+```
+
+Please fix the template and return ONLY the corrected YAML code without any markdown formatting, comments, or explanations. The template must:
+
+1. Have valid YAML syntax
+2. Include required fields: id, info, requests
+3. Use proper indentation
+4. Have valid Nuclei template structure
+5. Replace any placeholder values with actual CVE information
+
+Return only the corrected YAML: 
