@@ -1,26 +1,39 @@
-Generate a Nuclei template in YAML format to detect a vulnerability based on the provided CVE ID and description. The template should include an HTTP GET request with a payload tailored to the vulnerability type (e.g., SQL Injection, XSS) and appropriate matchers to identify the vulnerability. Use the CVE ID in the template's 'id' field and include the description in the 'info' section. Return only the YAML code, no additional explanations. Here’s an example:
+Generate a valid Nuclei template in YAML format to detect the vulnerability described below. The template must:
 
-```yaml
-id: CVE-EXAMPLE-1234
+1. Use the exact CVE ID provided in the 'id' field
+2. Include a meaningful name and description based on the CVE description
+3. Set appropriate severity (low, medium, high, critical)
+4. Include relevant tags
+5. Create a realistic HTTP request with appropriate payload
+6. Add matchers that would detect the vulnerability
+7. Use proper YAML indentation (2 spaces)
+8. Return ONLY the YAML code, no markdown formatting, no comments, and no explanations
+
+CVE ID: {cve_id}
+Description: {description}
+
+Template structure:
+id: {cve_id}
 info:
-  name: Example SQL Injection
-  author: yourname
-  severity: high
-  description: Detects SQL Injection in a vulnerable endpoint.
+  name: [Descriptive name based on vulnerability]
+  author: nuclei-api
+  severity: [low/medium/high/critical]
+  description: [Description based on CVE details]
   reference:
-    - https://example.com
-  tags: cve, sql-injection
+    - https://nvd.nist.gov/vuln/detail/{cve_id}
+  tags: [relevant,tags,here]
 requests:
-  - method: GET
+  - method: [GET/POST]
     path:
-      - "{{BaseURL}}/vulnerable.php?id=1' OR '1'='1"
+      - "{{BaseURL}}/[vulnerable-endpoint]"
+    [headers: (if needed)]
+    [body: (if POST request)]
     matchers:
       - type: word
         words:
-          - "SQL syntax error"
-          - "mysql_fetch"
+          - "[indicator1]"
+          - "[indicator2]"
         part: body
         condition: or
-```
 
-Now, generate a template for CVE ID: {cve_id}, Description: {description}
+Generate the template now:

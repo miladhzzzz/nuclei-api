@@ -4,12 +4,9 @@ import subprocess
 from tempfile import NamedTemporaryFile
 from helpers.config import Config
 
-conf = Config()
-
-class TemplateController():
-
-    def __init__(self):
-        pass
+class TemplateController:
+    def __init__(self, conf=None):
+        self.conf = conf or Config()
 
     def is_nuclei_workflow(self, file_path: str) -> bool:
         """
@@ -48,7 +45,7 @@ class TemplateController():
     async def save_template(self, template_file: bytes , template_filename: str):
 
         # Define path to save uploaded template
-        save_path = f"{conf.nuclei_upload_template_path}/{template_filename}"
+        save_path = f"{self.conf.nuclei_upload_template_path}/{template_filename}"
 
         # Ensure the directory exists
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
