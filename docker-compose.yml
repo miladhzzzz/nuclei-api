@@ -6,13 +6,19 @@ services:
     ports:
       - "8000:8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      # - /var/run/docker.sock:/var/run/docker.sock
+      - /run/user/1000/docker.sock:/var/run/docker.sock
       - ./nuclei-templates:/root/nuclei-templates
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     privileged: true
     restart: unless-stopped
 
   redis:
     image: redis:6
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     ports: 
        - "6379:6379"
     restart: unless-stopped
@@ -25,15 +31,21 @@ services:
       - redis
     deploy:
       mode: replicated
-      replicas: 2
+      replicas: 1
     volumes:
       - ./nuclei-templates/ai:/app/templates
-      - /var/run/docker.sock:/var/run/docker.sock
+      # - /var/run/docker.sock:/var/run/docker.sock
+      - /run/user/1000/docker.sock:/var/run/docker.sock
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     restart: unless-stopped
     
   celery_beat:
     build: .
     command: celery -A celery_config:celery_app beat --loglevel=info
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       - redis
     restart: unless-stopped
@@ -45,6 +57,9 @@ services:
       - "5555:5555"
     environment:
       - FLOWER_UNAUTHENTICATED_API=true
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       - redis
       - celery_worker
@@ -56,7 +71,11 @@ services:
        - "11434:11434"  # Ollama API port
     volumes:
       - ollama-data:/root/.ollama  # Persist models
+      - /etc/localtime:/etc/localtime:ro
       - ./etc/entrypoint.sh:/entrypoint.sh
+    environment:
+    # Comment this out if you are not using amdgpu
+      - HSA_OVERRIDE_GFX_VERSION=8.0.3
     entrypoint: ["/usr/bin/sh", "/entrypoint.sh"]
     restart: unless-stopped
 
@@ -90,6 +109,40 @@ services:
       volumes:
         - loki_data:/tmp/loki
         - ./loki:/etc/loki
+        - /etc/localtime:/etc/localtime:ro
+        - /etc/timezone:/etc/timezone:ro
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    restart: unless-stopped
+    depends_on:
+      - prometheus
 
   # nuclei-ui:
   #   build:
@@ -105,3 +158,5 @@ volumes:
   ollama-data:
   open-webui-data:
   loki_data:
+  prometheus_data:
+  grafana_data:
