@@ -8,8 +8,8 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Cybernod Scanner",
-  description: "Frontend for Cybernod vulnerability scanning",
+  title: "Nuclei Automated AI Scanner",
+  description: "Frontend for Nuclei AI vulnerability scanning",
     generator: 'v0.dev'
 }
 
