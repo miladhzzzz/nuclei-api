@@ -1,0 +1,49 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Nuclei API metrics
+  - job_name: 'nuclei-api'
+    static_configs:
+      - targets: ['nuclei-api:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Redis metrics (if using redis_exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    scrape_interval: 15s
+
+  # Celery Flower metrics
+  - job_name: 'flower'
+    static_configs:
+      - targets: ['flower:5555']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # System metrics (if using node_exporter)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 15s
+
+  # Docker metrics (if using cadvisor)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 15s
+
+  # Ollama metrics (if available)
+  # - job_name: 'ollama'
+  #   static_configs:
+  #     - targets: ['ollama:11434']
+  #   metrics_path: '/api/metrics'
+  #   scrape_interval: 30s
+  #   scrape_timeout: 10s 
