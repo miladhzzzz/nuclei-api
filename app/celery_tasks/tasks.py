@@ -5,18 +5,17 @@ import logging
 import time
 import redis
 import json
+import asyncio
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from celery.result import GroupResult
-from celery import chain, group ,chord
+from celery import chain, group, chord
 from celery_config import celery_app
 from helpers import config
-from controllers.DockerController import DockerController
-from controllers.FingerprintController import FingerprintController
-from controllers.NucleiController import NucleiController
-from controllers.TemplateController import TemplateController
+from services import ScanService, TemplateService
+from models.models import ScanRequest, ScanWithPromptRequest, ScanResponse, TaskStatusResponse, ComprehensiveScanRequest
+from api.metrics_routes import record_celery_task, record_template_generation, record_template_validation
 
-# Configure logging with more detail
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -24,434 +23,459 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Redis with environment variables for security
 redis_client = redis.Redis(
     host="redis",
     port=6379,
     db=0,
-    decode_responses=True  # Simplify JSON handling
+    decode_responses=True
 )
 
-OLLAMA_URL_DEFAULT = "http://ollama:11434/api/generate"
-OLLAMA_TIMEOUT = 2000  # seconds
-TEMPLATE_DIR = Path("/app/templates")
-
-# Controllers
-fingerprint_controller = FingerprintController()
-docker_controller = DockerController()
-nuclei_controller = NucleiController()
-template_controller = TemplateController()
-conf = config.Config()
-
-# Load prompt template
-try:
-    with open(os.path.join(os.path.dirname(__file__), "template.txt"), "r") as f:
-        PROMPT_TEMPLATE = f.read()
-except FileNotFoundError:
-    logger.error("Prompt template file not found")
-    PROMPT_TEMPLATE = "Generate a Nuclei template for {cve_id} with description: {description}"
-
-def get_last_seven_days_range() -> Tuple[str, str]:
-    """
-    Returns a tuple of (start_date, end_date) strings for the last 7 days in ISO 8601 format.
-    """
-    current_date = datetime.datetime.utcnow()
-    end_date = current_date - datetime.timedelta(days=1)  # Yesterday
-    start_date = end_date - datetime.timedelta(days=6)    # 7 days total
-    return (
-        start_date.strftime("%Y-%m-%dT00:00:00Z"),
-        end_date.strftime("%Y-%m-%dT00:00:00Z")
-    )
-
-
-@celery_app.task
-def refine_nuclei_template(cve_id: str, template: str, error: Optional[str] = None) -> str:
-    """Refine an existing Nuclei template based on error or improvement needs."""
-    logger.info(f"Starting template refinement for {cve_id}")
-    prompt = (
-        f"Fix this template for {cve_id} that caused error '{error}':\n{template}"
-        if error else f"Refine this template for {cve_id} to improve detection:\n{template}"
-    )
-    ollama_url = conf.ollama_url or OLLAMA_URL_DEFAULT
-    payload = {"model": conf.llm_model, "prompt": prompt, "stream": False}
-    try:
-        response = requests.post(ollama_url, json=payload, timeout=OLLAMA_TIMEOUT)
-        response.raise_for_status()
-        refined_template = response.json().get("response", "")
-        if refined_template:
-            logger.info(f"Refined template for {cve_id}")
-            return refined_template
-        logger.warning(f"No refined template generated for {cve_id}")
-        return template  # Return original if refinement fails
-    except requests.RequestException as e:
-        logger.error(f"Failed to refine template for {cve_id}: {e}")
-        return template  # Return original on failure
+scan_service = ScanService()
+template_service = TemplateService()
 
 @celery_app.task(bind=True, max_retries=3)
 def fetch_vulnerabilities(self) -> List[Dict[str, Any]]:
-    """
-    Fetch vulnerabilities from multiple sources and cache in Redis for 12 hours.
-    Uses exponential backoff for retries.
-    """
-    cache_key = "all_vulnerabilities"
-    cached = redis_client.get(cache_key)
-    if cached:
-        logger.info("Using cached vulnerabilities")
-        return json.loads(cached)
-
-    start_date, end_date = get_last_seven_days_range()
-    sources = [
-        {
-            "name": "NVD",
-            "url": "https://services.nvd.nist.gov/rest/json/cves/2.0",
-            "params": {"resultsPerPage": 500, "cvssV3Severity": "HIGH", "pubStartDate": start_date, "pubEndDate": end_date}
-        },
-        {
-            "name": "CISA KEV",
-            "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
-        },
-        {
-            "name": "Red Hat",
-            "url": "https://access.redhat.com/hydra/rest/securitydata/cve.json",
-            "params": {"per_page": 100, "severity": "important"}
-        }
-    ]
-    all_vulns = []
-    for source in sources:
+    start_time = time.time()
+    try:
+        # Run the async method in an event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            params = source.get("params", {})
-            response = requests.get(source["url"], params=params, timeout=30)
-            response.raise_for_status()
-            data = response.json()
-            vulns = (
-                data.get("vulnerabilities", []) if source["name"] in ["NVD", "CISA KEV"] else
-                data if source["name"] == "Red Hat" and isinstance(data, list) else []
-            )
-            all_vulns.extend(vulns)
-            logger.info(f"Fetched {len(vulns)} vulnerabilities from {source['name']}")
-        except requests.RequestException as e:
-            logger.error(f"Failed to fetch from {source['name']}: {str(e)}")
-            if self.request.retries < self.max_retries:
-                delay = 2 ** self.request.retries  # Exponential backoff
-                raise self.retry(countdown=delay)
-
-    unique_vulns = list({v.get("cve", {}).get("id", v.get("id")): v for v in all_vulns if isinstance(v, dict)}.values())
-    redis_client.setex(cache_key, 43200, json.dumps(unique_vulns))
-    logger.info(f"Cached {len(unique_vulns)} unique vulnerabilities")
-    return unique_vulns
+            result = loop.run_until_complete(template_service.fetch_vulnerabilities(self))
+        finally:
+            loop.close()
+        
+        duration = time.time() - start_time
+        record_celery_task("fetch_vulnerabilities", "success", duration)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("fetch_vulnerabilities", "failed", duration)
+        raise
 
 @celery_app.task
 def process_vulnerabilities(vuln_data: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-    """
-    Process vulnerabilities into prompts for template generation.
-    """
-    processed = []
-    for vuln in vuln_data:
-        cve_id = vuln.get("cve", {}).get("id", vuln.get("id", "Unknown"))
-        description = (
-            vuln["cve"]["descriptions"][0]["value"]
-            if "cve" in vuln and "descriptions" in vuln["cve"] else
-            vuln.get("description", "No description")
-        )
-        prompt = PROMPT_TEMPLATE.format(cve_id=cve_id, description=description)
-        processed.append({"cve_id": cve_id, "prompt": prompt})
-    logger.info(f"Processed {len(processed)} vulnerabilities")
-    return processed
+    start_time = time.time()
+    try:
+        result = template_service.process_vulnerabilities(vuln_data)
+        duration = time.time() - start_time
+        record_celery_task("process_vulnerabilities", "success", duration)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("process_vulnerabilities", "failed", duration)
+        raise
 
 @celery_app.task
 def generate_nuclei_template(cve_id: str, prompt: str) -> Optional[Dict[str, str]]:
-    """Generate a single Nuclei template for a given CVE."""
-
-    file_path = TEMPLATE_DIR / f"{cve_id}.yaml"
-    if file_path.exists():
-        logger.info(f"Template for {cve_id} already exists, skipping generation")
-        return {"cve_id": cve_id, "template": file_path.read_text()}
-    
-    logger.info(f"Starting template generation for {cve_id}")
-    ollama_url = conf.ollama_url or OLLAMA_URL_DEFAULT
-    payload = {"model": conf.llm_model, "prompt": prompt, "stream": False}
+    start_time = time.time()
     try:
-        response = requests.post(ollama_url, json=payload, timeout=OLLAMA_TIMEOUT)
-        response.raise_for_status()
-        template = response.json().get("response", "")
-        if template:
-            logger.info(f"Generated template for {cve_id}")
-            return {"cve_id": cve_id, "template": template}
-        logger.warning(f"No template generated for {cve_id}")
-        return None
-    except requests.RequestException as e:
-        logger.error(f"Failed to generate template for {cve_id}: {e}")
-        return None
+        result = template_service.generate_nuclei_template(cve_id, prompt)
+        duration = time.time() - start_time
+        status = "success" if result else "failed"
+        record_celery_task("generate_nuclei_template", status, duration)
+        record_template_generation(cve_id, status)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("generate_nuclei_template", "failed", duration)
+        record_template_generation(cve_id, "failed")
+        raise
 
 @celery_app.task
 def generate_nuclei_templates(processed_data: List[Dict[str, str]]) -> None:
-    """Queue template generation tasks for all vulnerabilities."""
-    logger.info(f"Starting template generation for {len(processed_data)} vulnerabilities")
-    if not processed_data:
-        logger.warning("No vulnerabilities to process")
-        return None
-
-    # Create a group of template generation tasks
-    job = group(generate_nuclei_template.s(item["cve_id"], item["prompt"]) for item in processed_data)
-    # Use a chord to link the group to a callback chain
-    chord(job)(chain(store_templates.s(), validate_templates_callback.s()))
-    logger.info(f"Queued {len(processed_data)} template generation tasks with chord callback")
+    return template_service.generate_nuclei_templates(processed_data)
 
 @celery_app.task
 def store_templates(templates: List[Optional[Dict[str, str]]]) -> List[Dict[str, str]]:
-    TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
-    stored_templates = []
-    for item in templates:
-        if not item or not item.get("template"):
-            logger.warning(f"Skipping empty or invalid template: {item}")
-            continue
-        file_path = TEMPLATE_DIR / f"{item['cve_id']}.yaml"
-        cleaned_template = item["template"].strip()
-        if cleaned_template.startswith("```yaml"):
-            cleaned_template = cleaned_template[len("```yaml"):].strip()
-        if cleaned_template.endswith("```"):
-            cleaned_template = cleaned_template[:-len("```")].strip()
+    return template_service.store_templates(templates)
 
-        if file_path.exists():
-            logger.info(f"Template for {item['cve_id']} already exists, using existing file")
+@celery_app.task
+def refine_nuclei_template(cve_id: str, validation_error: str, current_template: str = None) -> str:
+    """
+    Refine a Nuclei template that failed validation.
+    
+    Args:
+        cve_id: The CVE ID
+        validation_error: The validation error message
+        current_template: The current template content (optional)
+        
+    Returns:
+        Refined template content
+    """
+    start_time = time.time()
+    try:
+        # Track refinement step
+        template_service._track_refinement_step(cve_id, "llm_refinement_start", {
+            "validation_error": validation_error,
+            "has_current_template": current_template is not None
+        })
+        
+        # Load the current template if not provided
+        if not current_template:
+            template_file = Path("/app/templates") / f"{cve_id}.yaml"
+            if template_file.exists():
+                current_template = template_file.read_text()
+                template_service._track_refinement_step(cve_id, "template_loaded", {
+                    "source": "file",
+                    "template_length": len(current_template)
+                })
+            else:
+                raise ValueError(f"Template file not found for {cve_id}")
         else:
-            try:
-                file_path.write_text(cleaned_template)
-                logger.info(f"Stored new template at {file_path}")
-                redis_client.hincrby("pipeline_metrics", "templates_generated", 1)  # Count new templates
-            except IOError as e:
-                logger.error(f"Failed to store template for {item['cve_id']}: {e}")
-                continue
-        stored_templates.append({"cve_id": item["cve_id"], "template_file": str(file_path)})
-    logger.info(f"Stored or reused {len(stored_templates)} templates")
-    return stored_templates
-
-def get_vulnerable_hosts(cve_id: str) -> List[str]:
-    """
-    Placeholder to fetch known vulnerable hosts for a CVE.
-    In practice, this could query a database or external service.
-    """
-    # Mock implementation; replace with real logic
-    mock_hosts = {
-        "CVE-2021-1234": ["example.com", "test.vuln"],
-        "CVE-2022-5678": ["vuln.host"]
-    }
-    return mock_hosts.get(cve_id, default=["honey.scanme.sh"])
+            template_service._track_refinement_step(cve_id, "template_loaded", {
+                "source": "parameter",
+                "template_length": len(current_template)
+            })
+        
+        # Load refinement prompt template
+        try:
+            with open(os.path.join(os.path.dirname(__file__), "refinement_template.txt"), "r") as f:
+                refinement_prompt_template = f.read()
+            template_service._track_refinement_step(cve_id, "prompt_template_loaded", {
+                "template_found": True
+            })
+        except FileNotFoundError:
+            logger.error("Refinement prompt template not found")
+            refinement_prompt_template = "Fix this YAML template: {current_template}\nError: {validation_error}\nReturn only the corrected YAML:"
+            template_service._track_refinement_step(cve_id, "prompt_template_loaded", {
+                "template_found": False,
+                "using_fallback": True
+            })
+        
+        # Create refinement prompt
+        refinement_prompt = refinement_prompt_template.format(
+            cve_id=cve_id,
+            validation_error=validation_error,
+            current_template=current_template
+        )
+        
+        template_service._track_refinement_step(cve_id, "llm_request_prepared", {
+            "prompt_length": len(refinement_prompt),
+            "ollama_url": conf.ollama_url or "http://ollama:11434/api/generate"
+        })
+        
+        # Call LLM for refinement
+        conf = config.Config()
+        ollama_url = conf.ollama_url or "http://ollama:11434/api/generate"
+        payload = {
+            "model": conf.llm_model, 
+            "prompt": refinement_prompt, 
+            "stream": False
+        }
+        
+        response = requests.post(ollama_url, json=payload, timeout=2000)
+        response.raise_for_status()
+        
+        refined_template = response.json().get("response", "")
+        if not refined_template:
+            raise ValueError("No refinement response from LLM")
+        
+        template_service._track_refinement_step(cve_id, "llm_response_received", {
+            "response_length": len(refined_template),
+            "response_status": response.status_code
+        })
+        
+        duration = time.time() - start_time
+        record_celery_task("refine_nuclei_template", "success", duration)
+        logger.info(f"Refined template for {cve_id}")
+        
+        return refined_template
+        
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("refine_nuclei_template", "failed", duration)
+        
+        # Track refinement failure
+        template_service._track_refinement_failure(cve_id, 1, str(e), duration)
+        
+        logger.error(f"Failed to refine template for {cve_id}: {str(e)}", exc_info=True)
+        raise
 
 @celery_app.task
 def store_refined_template(cve_id: str, refined_template: str) -> Dict[str, str]:
-    file_path = TEMPLATE_DIR / f"{cve_id}.yaml"
-    cleaned_template = refined_template.strip()
-    if cleaned_template.startswith("```yaml"):
-        cleaned_template = cleaned_template[len("```yaml"):].strip()
-    if cleaned_template.endswith("```"):
-        cleaned_template = cleaned_template[:-len("```")].strip()
-
-    try:
-        file_path.write_text(cleaned_template)
-        logger.info(f"Stored refined template for {cve_id} at {file_path}")
-        return {"cve_id": cve_id, "template_file": str(file_path)}
-    except IOError as e:
-        logger.error(f"Failed to store refined template for {cve_id}: {e}")
-        return {"cve_id": cve_id, "template_file": None}  # Handle error gracefully
+    return template_service.store_refined_template(cve_id, refined_template)
 
 @celery_app.task
 def validate_template(cve_id: str, template_file: str, max_attempts: int = 3, attempt: int = 1) -> Dict[str, Any]:
-    """Validate a Nuclei template against known vulnerable hosts, refining asynchronously if needed, with metrics tracking."""
-    logger.info(f"Validating template for {cve_id}, attempt {attempt}")
-    start_time = time.time()  # For optional duration tracking
-    hosts = get_vulnerable_hosts(cve_id)
-    
-    # Redis keys
-    global_metrics_key = "pipeline_metrics"
-    cve_metrics_key = f"template_metrics:{cve_id}"
-
-    # Initialize CVE metrics if not present
-    if not redis_client.hexists(cve_metrics_key, "attempts"):
-        redis_client.hset(cve_metrics_key, mapping={"attempts": 0, "refinements": 0, "validated": 0, "scan_success": 0, "no_result":0})
-
-    if not hosts:
-        redis_client.hincrby(cve_metrics_key, "attempts", 1)
-        redis_client.hincrby(global_metrics_key, "failed_validations", 1)
-        return {"status": "failed", "reason": "No vulnerable hosts found"}
-
-    # Read template content for refinement
+    start_time = time.time()
     try:
-        template_content = Path(template_file).read_text()
-    except (IOError, TypeError) as e:
-        logger.error(f"Failed to read template file {template_file} for {cve_id}: {e}")
-        redis_client.hincrby(cve_metrics_key, "attempts", 1)
-        redis_client.hincrby(global_metrics_key, "failed_validations", 1)
-        return {"status": "failed", "reason": f"Cannot read template file: {e}"}
-
-    try:
-        # Validate template syntax
-        validation_response = template_controller.validate_template_cel(template_file)
-        if validation_response is not None:
-            redis_client.hincrby(cve_metrics_key, "attempts", 1)
-            redis_client.hincrby(global_metrics_key, "failed_validations", 1)
-            return {"status": "failed", "reason": validation_response}
-        
-        # Mark as validated if syntax check passes
-        redis_client.hset(cve_metrics_key, "validated", 1)
-        redis_client.hincrby(global_metrics_key, "templates_validated", 1)
-
-        # Run Nuclei scan
-        scan_response = nuclei_controller.run_nuclei_scan(target=hosts[0], cve_id=cve_id)
-        container_name = scan_response.get("container_name")
-        if not container_name:
-            raise ValueError("No container_name in scan response")
-
-        container_status = docker_controller.container_status(container_name)
-        if container_status is None:
-            redis_client.hincrby(cve_metrics_key, "attempts", 1)
-            redis_client.hincrby(global_metrics_key, "failed_validations", 1)
-            return {"status": "failed", "reason": "Container not found"}
-
-        while container_status == "running":
-            time.sleep(30)
-            container_status = docker_controller.container_status(container_name)
-
-        logs = docker_controller.stream_container_logs(container_name)
-        for line in logs:
-            if "[INF]" in line and "matched" in line:
-                logger.info(f"Validated template for {cve_id} on attempt {attempt}")
-                redis_client.hset(cve_metrics_key, "scan_success", 1)
-                redis_client.hincrby(cve_metrics_key, "attempts", 1)
-                redis_client.hincrby(global_metrics_key, "scan_successes", 1)
-                duration = time.time() - start_time
-                redis_client.hincrby(global_metrics_key, "total_validation_duration", int(duration * 1000))  # ms
-                return {"status": "success", "attempts": attempt}
-            # Scan did not find anything
-            if "[INF]" in line and "No results found. Better luck next time!" in line:
-                logger.info(f"Did not find anything scanning:{cve_id}")
-                redis_client.hset(global_metrics_key, "no_result", 1)
-
-        # No match found
-        redis_client.hincrby(cve_metrics_key, "attempts", 1)
-        if attempt < max_attempts:
-            refinement_chain = chain(
-                refine_nuclei_template.s(cve_id, template_content),
-                store_refined_template.s(cve_id),
-                validate_template.s(cve_id, max_attempts=max_attempts, attempt=attempt + 1)
-            )
-            refinement_chain.apply_async()
-            logger.info(f"Queued refinement and retry for {cve_id} on attempt {attempt}")
-            redis_client.hincrby(cve_metrics_key, "refinements", 1)
-            redis_client.hincrby(global_metrics_key, "refinements", 1)
-            return {"status": "pending", "reason": "Refinement and retry queued"}
-        else:
-            logger.info(f"Validation failed for {cve_id} after {max_attempts} attempts")
-            redis_client.hincrby(global_metrics_key, "failed_validations", 1)
-            duration = time.time() - start_time
-            redis_client.hincrby(global_metrics_key, "total_validation_duration", int(duration * 1000))  # ms
-            return {"status": "failed", "reason": "No vulnerabilities detected"}
-
-    except Exception as e:
-        logger.error(f"Validation failed for {cve_id}: {e}")
-        redis_client.hincrby(cve_metrics_key, "attempts", 1)
-        if attempt < max_attempts:
-            refinement_chain = chain(
-                refine_nuclei_template.s(cve_id, template_content, str(e)),
-                store_refined_template.s(cve_id),
-                validate_template.s(cve_id, max_attempts=max_attempts, attempt=attempt + 1)
-            )
-            refinement_chain.apply_async()
-            logger.info(f"Queued refinement and retry for {cve_id} due to error on attempt {attempt}")
-            redis_client.hincrby(cve_metrics_key, "refinements", 1)
-            redis_client.hincrby(global_metrics_key, "refinements", 1)
-            return {"status": "pending", "reason": "Refinement and retry queued"}
-        else:
-            logger.info(f"Validation failed for {cve_id} after {max_attempts} attempts")
-            redis_client.hincrby(global_metrics_key, "failed_validations", 1)
-            duration = time.time() - start_time
-            redis_client.hincrby(global_metrics_key, "total_validation_duration", int(duration * 1000))  # ms
-            return {"status": "failed", "reason": "Max attempts reached"}
-
-@celery_app.task
-def fingerprint_target(ip_address: str) -> Optional[str]:
-    """
-    Fingerprint an IP address to detect the OS.
-    """
-    try:
-        response = fingerprint_controller.fingerprint_target(ip_address)
-        os_name = response if isinstance(response, str) else response.get("os")
-        if not os_name:
-            logger.warning(f"No OS detected for {ip_address}")
-            return None
-        logger.info(f"Detected OS for {ip_address}: {os_name}")
-        return os_name
-    except Exception as e:
-        logger.error(f"Fingerprinting failed for {ip_address}: {str(e)}")
-        return None
-
-@celery_app.task
-def run_nuclei_scan(os_name: Optional[str], target: str, templates: Optional[List[str]] = None, template_file: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Run a Nuclei scan with OS-specific or default templates.
-    """
-    try:
-        os_tag_map = {"Linux": "linux", "Windows": "windows", "macOS": "macos"}
-        template = templates or (template_file and [template_file]) or (
-            [f"{os_tag_map[os_name]}/"] if os_name in os_tag_map else ["http/"]
-        )
-        result = nuclei_controller.run_nuclei_scan(target=target, template=template)
-        logger.info(f"Nuclei scan completed for {target}")
+        result = template_service.validate_template(cve_id, template_file, max_attempts, attempt)
+        duration = time.time() - start_time
+        status = "success" if result.get("status") == "success" else "failed"
+        record_celery_task("validate_template", status, duration)
+        record_template_validation(cve_id, status)
         return result
     except Exception as e:
-        logger.error(f"Nuclei scan failed for {target}: {str(e)}")
+        duration = time.time() - start_time
+        record_celery_task("validate_template", "failed", duration)
+        record_template_validation(cve_id, "failed")
         raise
 
 @celery_app.task
 def validate_templates_callback(templates: List[Dict[str, str]]) -> None:
-    if not templates:
-        logger.error("No templates to validate")
-        return
-    validation_group = group(
-        validate_template.s(t["cve_id"], t["template_file"]) for t in templates
-    )
-    validation_group.apply_async()
-    logger.info(f"Queued validation for {len(templates)} templates")
+    return template_service.validate_templates_callback(templates)
 
 @celery_app.task
 def generate_templates() -> None:
-    """
-    Orchestrate the template generation and validation pipeline asynchronously.
-    """
-    logger.info("Starting template generation pipeline")
-    workflow = chain(
-        fetch_vulnerabilities.s(),
-        process_vulnerabilities.s(),
-        generate_nuclei_templates.s(),
-        #store_templates.s(),
-        #validate_templates_callback.s()
-    )
-    workflow.apply_async()
-    logger.info("Template generation and validation pipeline queued")
+    return template_service.generate_templates()
+
+@celery_app.task
+def fingerprint_target(target: str) -> Optional[str]:
+    return scan_service.fingerprint_target(target)
+
+@celery_app.task(bind=True, max_retries=1)
+def run_nuclei_scan(self, os_name: Optional[str], target: str, templates: Optional[List[str]] = None, template_file: Optional[str] = None) -> Dict[str, Any]:
+    start_time = time.time()
+    try:
+        if template_file:
+            result = scan_service.run_custom_template_scan(target, template_file)
+        else:
+            result = scan_service.run_scan(target, templates)
+        duration = time.time() - start_time
+        record_celery_task("run_nuclei_scan", "success", duration)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("run_nuclei_scan", "failed", duration)
+        raise
 
 @celery_app.task
 def fingerprint_scan_pipeline(target: str, templates: Optional[List[str]] = None, template_file: Optional[str] = None) -> Any:
-    """
-    Chain fingerprinting and scanning tasks.
-    """
-    logger.info(f"Starting scan pipeline for {target}")
+    start_time = time.time()
+    try:
+        result = scan_service.fingerprint_scan_pipeline(target, templates, template_file)
+        duration = time.time() - start_time
+        record_celery_task("fingerprint_scan_pipeline", "success", duration)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("fingerprint_scan_pipeline", "failed", duration)
+        raise
 
-    task_chain = chain(
-        fingerprint_target.s(target),
-        run_nuclei_scan.s(target=target, templates=templates, template_file=template_file)
-    )
-    return task_chain.apply_async()
+@celery_app.task(bind=True, max_retries=1)
+def ai_scan_pipeline(self, target: str, prompt: Optional[str] = None) -> Any:
+    start_time = time.time()
+    try:
+        if prompt:
+            result = scan_service.run_ai_scan(target, prompt)
+        else:
+            result = scan_service.run_scan(target, prompt=prompt)
+        duration = time.time() - start_time
+        record_celery_task("ai_scan_pipeline", "success", duration)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("ai_scan_pipeline", "failed", duration)
+        raise
+
+@celery_app.task(bind=True, max_retries=1)
+def run_custom_template_scan(self, target: str, template_content: str, template_filename: Optional[str] = None) -> Dict[str, Any]:
+    start_time = time.time()
+    try:
+        result = scan_service.run_custom_template_scan(target, template_content, template_filename)
+        duration = time.time() - start_time
+        record_celery_task("run_custom_template_scan", "success", duration)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("run_custom_template_scan", "failed", duration)
+        raise
+
+@celery_app.task(bind=True, max_retries=1)
+def comprehensive_scan_pipeline(self, scan_request: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Comprehensive scan pipeline that handles all scan types.
+    
+    Args:
+        scan_request: Dictionary containing scan parameters
+        
+    Returns:
+        Scan results
+    """
+    start_time = time.time()
+    try:
+        # Extract parameters from scan request
+        target = scan_request.get("target")
+        scan_type = scan_request.get("scan_type", "auto")
+        templates = scan_request.get("templates")
+        template_file = scan_request.get("template_file")
+        template_content = scan_request.get("template_content")
+        prompt = scan_request.get("prompt")
+        workflow_file = scan_request.get("workflow_file")
+        use_fingerprinting = scan_request.get("use_fingerprinting", True)
+        custom_parameters = scan_request.get("custom_parameters")
+        
+        # Run comprehensive scan
+        result = scan_service.run_comprehensive_scan(
+            target=target,
+            scan_type=scan_type,
+            templates=templates,
+            template_file=template_file,
+            template_content=template_content,
+            prompt=prompt,
+            workflow_file=workflow_file,
+            use_fingerprinting=use_fingerprinting,
+            custom_parameters=custom_parameters
+        )
+        
+        duration = time.time() - start_time
+        record_celery_task("comprehensive_scan_pipeline", "success", duration)
+        return result
+        
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("comprehensive_scan_pipeline", "failed", duration)
+        logger.error(f"Comprehensive scan pipeline failed: {str(e)}", exc_info=True)
+        raise
+
+@celery_app.task(bind=True, max_retries=1)
+def auto_scan_pipeline(self, target: str, templates: Optional[List[str]] = None, use_fingerprinting: bool = True) -> Dict[str, Any]:
+    """Auto scan pipeline with fingerprinting"""
+    start_time = time.time()
+    try:
+        result = scan_service.run_comprehensive_scan(
+            target=target,
+            scan_type="auto",
+            templates=templates,
+            use_fingerprinting=use_fingerprinting
+        )
+        duration = time.time() - start_time
+        record_celery_task("auto_scan_pipeline", "success", duration)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("auto_scan_pipeline", "failed", duration)
+        raise
+
+@celery_app.task(bind=True, max_retries=1)
+def workflow_scan_pipeline(self, target: str, workflow_file: str) -> Dict[str, Any]:
+    """Workflow scan pipeline"""
+    start_time = time.time()
+    try:
+        result = scan_service.run_comprehensive_scan(
+            target=target,
+            scan_type="workflow",
+            workflow_file=workflow_file
+        )
+        duration = time.time() - start_time
+        record_celery_task("workflow_scan_pipeline", "success", duration)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("workflow_scan_pipeline", "failed", duration)
+        raise
 
 @celery_app.task
-def ai_scan_pipeline(target: str, prompt: Optional[str] = None) -> Any:
-    """
-    Chain fingerprinting and scanning tasks.
-    """
-    logger.info(f"Starting scan pipeline for {target}")
+def fingerprint_only(target: str) -> Dict[str, Any]:
+    """Fingerprint target only"""
+    start_time = time.time()
+    try:
+        # Use the fingerprint controller directly
+        from controllers.FingerprintController import FingerprintController
+        fingerprint_controller = FingerprintController()
+        result = fingerprint_controller.fingerprint_target(target)
+        
+        duration = time.time() - start_time
+        record_celery_task("fingerprint_only", "success", duration)
+        return {"target": target, "fingerprint": result}
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("fingerprint_only", "failed", duration)
+        raise
 
-    task_chain = chain(
-        fingerprint_target.s(target),
-        generate_nuclei_template.s(None, prompt),
-        run_nuclei_scan.s(target=target),
-    )
-    return task_chain.apply_async()
+@celery_app.task
+def discover_targets(query: str = "vulnerable hosts", max_results: int = 50) -> Dict[str, Any]:
+    """Discover targets using the enhanced controllers"""
+    start_time = time.time()
+    try:
+        # Use the vulnerability source controller to find targets
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            from controllers.VulnerabilitySourceController import VulnerabilitySourceController
+            vuln_controller = VulnerabilitySourceController()
+            result = loop.run_until_complete(vuln_controller.fetch_vulnerabilities(query, max_results))
+        finally:
+            loop.close()
+        
+        duration = time.time() - start_time
+        record_celery_task("discover_targets", "success", duration)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("discover_targets", "failed", duration)
+        raise
+
+@celery_app.task
+def validate_target_connectivity(target: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate target connectivity using TargetManagementController"""
+    start_time = time.time()
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            from controllers.TargetManagementController import TargetManagementController
+            target_controller = TargetManagementController()
+            result = loop.run_until_complete(target_controller.validate_target_connectivity(target))
+        finally:
+            loop.close()
+        
+        duration = time.time() - start_time
+        record_celery_task("validate_target_connectivity", "success", duration)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("validate_target_connectivity", "failed", duration)
+        raise
+
+@celery_app.task
+def template_validation_pipeline(template_content: str, template_filename: Optional[str] = None) -> Dict[str, Any]:
+    """Template validation pipeline"""
+    start_time = time.time()
+    try:
+        # Save template to temporary file if content provided
+        if template_content and not template_filename:
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+                f.write(template_content)
+                template_filename = f.name
+        
+        if not template_filename:
+            raise ValueError("No template file or content provided")
+        
+        # Validate template using TemplateController
+        from controllers.TemplateController import TemplateController
+        template_controller = TemplateController()
+        validation_result = template_controller.validate_template_cel(template_filename)
+        
+        if validation_result:
+            result = {"status": "failed", "error": validation_result}
+        else:
+            result = {"status": "success", "template_file": template_filename}
+        
+        duration = time.time() - start_time
+        record_celery_task("template_validation_pipeline", "success", duration)
+        return result
+        
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("template_validation_pipeline", "failed", duration)
+        raise
+
+@celery_app.task(bind=True, max_retries=1)
+def run_scan(self, target: str, templates: Optional[List[str]] = None, prompt: Optional[str] = None):
+    """Legacy scan task for backward compatibility"""
+    start_time = time.time()
+    try:
+        if prompt:
+            result = scan_service.run_ai_scan(target, prompt)
+        else:
+            result = scan_service.run_scan(target, templates)
+        duration = time.time() - start_time
+        record_celery_task("run_scan", "success", duration)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        record_celery_task("run_scan", "failed", duration)
+        raise
