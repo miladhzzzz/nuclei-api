@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request
+from fastapi.responses import Response
 from prometheus_client import (
     generate_latest, 
     CONTENT_TYPE_LATEST,
@@ -197,11 +198,9 @@ api_errors_total = Counter(
 async def metrics_middleware(request: Request, call_next):
     start_time = time.time()
     
-    # Get request size
-    request_size = 0
-    if hasattr(request, 'body'):
-        body = await request.body()
-        request_size = len(body)
+    # Avoid consuming the request stream in middleware; using Content-Length
+    # prevents POST/PUT handlers from hanging when they need to parse body.
+    request_size = int(request.headers.get("content-length", "0") or 0)
     
     # Process request
     response = await call_next(request)
@@ -210,9 +209,7 @@ async def metrics_middleware(request: Request, call_next):
     duration = time.time() - start_time
     
     # Get response size
-    response_size = 0
-    if hasattr(response, 'body'):
-        response_size = len(response.body)
+    response_size = int(response.headers.get("content-length", "0") or 0)
     
     # Record metrics
     http_requests_total.labels(
@@ -324,21 +321,8 @@ def update_business_metrics():
             templates_validated = int(pipeline_metrics.get('templates_validated', 0))
             scan_successes = int(pipeline_metrics.get('scan_successes', 0))
             
-            # Update pipeline execution metrics
-            pipeline_execution_total.labels(
-                pipeline_type='template_generation',
-                status='success'
-            ).inc(templates_generated)
-            
-            pipeline_execution_total.labels(
-                pipeline_type='template_validation',
-                status='success'
-            ).inc(templates_validated)
-            
-            pipeline_execution_total.labels(
-                pipeline_type='scan_execution',
-                status='success'
-            ).inc(scan_successes)
+            # Do not increment counters from aggregate Redis values during scrape.
+            # Counter updates must happen at event time via record_* helpers.
             
     except Exception as e:
         logger.error(f"Error updating business metrics: {e}")
@@ -354,7 +338,7 @@ async def get_metrics():
         update_business_metrics()
         
         # Generate Prometheus format
-        return generate_latest(REGISTRY)
+        return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
     except Exception as e:
         logger.error(f"Error generating metrics: {e}")
         return f"Error generating metrics: {str(e)}", 500
