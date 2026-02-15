@@ -12,7 +12,7 @@ from api import metrics_routes
 
 # Configure logging globally
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, Config().log_level.upper(), logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler()]
 )
@@ -23,7 +23,7 @@ conf = Config()
 
 sentry_sdk.init(
     dsn=conf.sentry_dsn,
-    traces_sample_rate=1.0,
+    traces_sample_rate=conf.sentry_traces_sample_rate,
     _experiments={
         "continuous_profiling_auto_start": True,
     },
@@ -38,11 +38,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
-    title="Nuclei API",
-    description="API for running Nuclei scans using Docker.",
-    version="0.1.1",
-    # openapi_url=None,
-    # debug=False
+    title=conf.app_title,
+    description=conf.app_description,
+    version=conf.app_version,
+    openapi_url=conf.app_openapi_url,
+    debug=conf.app_debug
 )
 
 app.add_middleware(
@@ -79,4 +79,4 @@ async def ping():
     return {"ping": "pong!"}
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0" , port=int(conf.app_port))
+    uvicorn.run("main:app", host=conf.app_host, port=conf.app_port)

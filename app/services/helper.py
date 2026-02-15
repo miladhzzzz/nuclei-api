@@ -16,15 +16,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 conf = config.Config()
-redis_client = redis.Redis(
-    host="redis",
-    port=6379,
-    db=0,
-    decode_responses=True
-)
-TEMPLATE_DIR = Path("/app/templates")
-OLLAMA_URL_DEFAULT = "http://ollama:11434/api/generate"
-OLLAMA_TIMEOUT = 2000
+redis_client = redis.Redis.from_url(conf.redis_url, decode_responses=True)
+TEMPLATE_DIR = Path(conf.template_dir)
+OLLAMA_URL_DEFAULT = conf.ollama_url
+OLLAMA_TIMEOUT = conf.ollama_timeout
 
 try:
     with open(os.path.join(os.path.dirname(__file__), "../celery_tasks/template.txt"), "r") as f:
@@ -162,5 +157,4 @@ def validate_yaml_structure(content: str) -> Tuple[bool, str]:
         return False, f"Invalid YAML: {str(e)}"
     except Exception as e:
         return False, f"Validation error: {str(e)}"
-
 
