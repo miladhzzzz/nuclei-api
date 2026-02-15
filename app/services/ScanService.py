@@ -4,10 +4,10 @@ import logging
 import time
 import redis
 import base64
-import tempfile
-from helper import *
+import uuid
+from services.helper import clean_yaml_content, validate_yaml_structure
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Any, Union
+from typing import List, Dict, Optional, Any
 from helpers import config
 from controllers.NucleiController import NucleiController
 from controllers.FingerprintController import FingerprintController
@@ -285,34 +285,27 @@ Generate the template:
                 logger.warning(f"Generated template has issues: {error_msg}")
                 return {"error": f"Generated template is invalid: {error_msg}"}
             
-            # Create temporary template file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as temp_file:
-                temp_file.write(cleaned_template)
-                temp_file_path = temp_file.name
+            upload_dir = Path(conf.nuclei_upload_template_path or "/root/nuclei-templates/custom")
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            template_filename = f"ai-{uuid.uuid4().hex}.yaml"
+            template_path = upload_dir / template_filename
+            template_path.write_text(cleaned_template)
+
+            # Run the scan with the generated template from mounted templates directory.
+            result = self.nuclei_controller.run_nuclei_scan(
+                target=target,
+                template_file=template_filename
+            )
             
-            try:
-                # Run the scan with the generated template
-                result = self.nuclei_controller.run_nuclei_scan(
-                    target=target,
-                    template=[temp_file_path]
-                )
-                
-                # Add template info to result
-                result["ai_generated_template"] = cleaned_template
-                result["prompt"] = prompt
-                
-                duration = time.time() - start_time
-                self._record_scan_metrics(target, "ai", "success" if "error" not in result else "failed", duration)
-                
-                logger.info(f"AI scan completed for {target}")
-                return result
-                
-            finally:
-                # Clean up temporary file
-                try:
-                    os.unlink(temp_file_path)
-                except Exception as e:
-                    logger.warning(f"Failed to clean up temporary template file: {str(e)}")
+            # Add template info to result
+            result["ai_generated_template"] = cleaned_template
+            result["prompt"] = prompt
+            
+            duration = time.time() - start_time
+            self._record_scan_metrics(target, "ai", "success" if "error" not in result else "failed", duration)
+            
+            logger.info(f"AI scan completed for {target}")
+            return result
                     
         except Exception as e:
             duration = time.time() - start_time if 'start_time' in locals() else 0
@@ -325,59 +318,50 @@ Generate the template:
             start_time = time.time()
             
             # Determine template source
+            upload_dir = Path(conf.nuclei_upload_template_path or "/root/nuclei-templates/custom")
+            upload_dir.mkdir(parents=True, exist_ok=True)
+
             if template_content:
-                # Use base64 encoded template content
+                # Use base64 encoded template content and persist it in mounted custom dir.
                 try:
                     template_bytes = base64.b64decode(template_content)
                     template_yaml = template_bytes.decode('utf-8')
                 except Exception as e:
                     return {"error": f"Invalid template content: {str(e)}"}
-                
-                # Create temporary file
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as temp_file:
-                    temp_file.write(template_yaml)
-                    temp_file_path = temp_file.name
-                
-                template_path = temp_file_path
-                should_cleanup = True
-                
+
+                template_filename = f"custom-{uuid.uuid4().hex}.yaml"
+                template_path = upload_dir / template_filename
+                template_path.write_text(template_yaml)
             elif template_file:
-                # Use provided template file path
-                template_path = template_file
-                should_cleanup = False
+                # Use existing template filename from custom dir.
+                template_filename = os.path.basename(template_file)
+                template_path = upload_dir / template_filename
+                if not template_path.exists():
+                    return {"error": f"Template file not found: {template_filename}"}
                 
             else:
                 return {"error": "Either template_file or template_content must be provided"}
             
-            try:
-                # Validate the template
-                validation_error = self.template_controller.validate_template_cel(template_path)
-                if validation_error is not None:
-                    logger.error(f"Template validation failed: {validation_error}")
-                    record_template_validation("custom", "failed")
-                    return {"error": f"Template validation failed: {validation_error}"}
-                
-                record_template_validation("custom", "success")
-                
-                # Run the scan
-                result = self.nuclei_controller.run_nuclei_scan(
-                    target=target,
-                    template=[template_path]
-                )
-                
-                duration = time.time() - start_time
-                self._record_scan_metrics(target, "custom", "success" if "error" not in result else "failed", duration)
-                
-                logger.info(f"Custom template scan completed for {target}")
-                return result
-                
-            finally:
-                # Clean up temporary file if created
-                if should_cleanup:
-                    try:
-                        os.unlink(template_path)
-                    except Exception as e:
-                        logger.warning(f"Failed to clean up temporary template file: {str(e)}")
+            # Validate the template
+            validation_error = self.template_controller.validate_template_cel(str(template_path))
+            if validation_error is not None:
+                logger.error(f"Template validation failed: {validation_error}")
+                record_template_validation("custom", "failed")
+                return {"error": f"Template validation failed: {validation_error}"}
+            
+            record_template_validation("custom", "success")
+            
+            # Run the scan via mounted custom template name.
+            result = self.nuclei_controller.run_nuclei_scan(
+                target=target,
+                template_file=template_filename
+            )
+            
+            duration = time.time() - start_time
+            self._record_scan_metrics(target, "custom", "success" if "error" not in result else "failed", duration)
+            
+            logger.info(f"Custom template scan completed for {target}")
+            return result
                         
         except Exception as e:
             duration = time.time() - start_time if 'start_time' in locals() else 0
@@ -389,14 +373,18 @@ Generate the template:
         try:
             start_time = time.time()
             
-            # Validate workflow file exists
-            if not os.path.exists(workflow_file):
-                return {"error": f"Workflow file not found: {workflow_file}"}
+            upload_dir = Path(conf.nuclei_upload_template_path or "/root/nuclei-templates/custom")
+            workflow_name = os.path.basename(workflow_file)
+            workflow_path = upload_dir / workflow_name
+
+            # Validate workflow file exists in mounted custom templates directory.
+            if not workflow_path.exists():
+                return {"error": f"Workflow file not found: {workflow_name}"}
             
             # Run the scan with workflow
             result = self.nuclei_controller.run_nuclei_scan(
                 target=target,
-                workflow=workflow_file
+                template_file=workflow_name
             )
             
             duration = time.time() - start_time
