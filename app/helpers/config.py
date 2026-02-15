@@ -10,7 +10,7 @@ class Config():
     def __init__(self) -> None:
         self.nuclei_upload_template_path = os.getenv("NUCLEI_CUSTOM_TEMPLATE_UPLOAD_PATH", "/root/nuclei-templates/custom")
         self.nuclei_template_path = os.getenv("NUCLEI_TEMPLATE_PATH", "/root/nuclei-templates")
-        self.nuclei_image = os.getenv("NUCLEI_IMAGE", "projectdiscovery/nuclei:3.3.9")
+        self.nuclei_image = os.getenv("NUCLEI_IMAGE", "projectdiscovery/nuclei:latest")
         self.nuclei_container_template_path = os.getenv("NUCLEI_CONTAINER_TEMPLATE_PATH", "/root/nuclei-templates")
         self.template_dir = os.getenv("TEMPLATE_DIR", "/app/templates")
 

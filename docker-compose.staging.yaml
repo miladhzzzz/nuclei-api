@@ -78,10 +78,21 @@ services:
     image: ollama/ollama
     ports: []
       # - "11434:11434"  # Ollama API port
+    environment:
+      # Choose ONE of the two styles below
+
+      # ── Style A: single model (simplest)
+      MODEL: "deepseek-coder:1.3b"
+
+      # ── Style B: multiple models (more flexible)
+      # MODELS: "deepseek-coder:1.3b llama3.2:3b nomic-embed-text:latest"
+
+      # Optional AMD GPU override (uncomment if needed)
+      # HSA_OVERRIDE_GFX_VERSION: "8.0.3"
     volumes:
       - ollama-data:/root/.ollama  # Persist models
       - ./etc/entrypoint.sh:/entrypoint.sh
-    entrypoint: ["/usr/bin/sh", "/entrypoint.sh"]
+    entrypoint: ["/entrypoint.sh"]
     restart: unless-stopped
 
   open-webui:
