@@ -24,12 +24,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-redis_client = redis.Redis(
-    host="redis",
-    port=6379,
-    db=0,
-    decode_responses=True
-)
+conf = config.Config()
+redis_client = redis.Redis.from_url(conf.redis_url, decode_responses=True)
 
 scan_service = ScanService()
 template_service = TemplateService()
@@ -105,7 +101,6 @@ def refine_nuclei_template(cve_id: str, validation_error: str, current_template:
         Refined template content
     """
     start_time = time.time()
-    conf = config.Config()
     try:
         # Track refinement step
         template_service._track_refinement_step(cve_id, "llm_refinement_start", {
@@ -115,7 +110,7 @@ def refine_nuclei_template(cve_id: str, validation_error: str, current_template:
         
         # Load the current template if not provided
         if not current_template:
-            template_file = Path("/app/templates") / f"{cve_id}.yaml"
+            template_file = Path(conf.template_dir) / f"{cve_id}.yaml"
             if template_file.exists():
                 current_template = template_file.read_text()
                 template_service._track_refinement_step(cve_id, "template_loaded", {
@@ -154,18 +149,18 @@ def refine_nuclei_template(cve_id: str, validation_error: str, current_template:
         
         template_service._track_refinement_step(cve_id, "llm_request_prepared", {
             "prompt_length": len(refinement_prompt),
-            "ollama_url": conf.ollama_url or "http://ollama:11434/api/generate"
+            "ollama_url": conf.ollama_url
         })
         
         # Call LLM for refinement
-        ollama_url = conf.ollama_url or "http://ollama:11434/api/generate"
+        ollama_url = conf.ollama_url
         payload = {
             "model": conf.llm_model, 
             "prompt": refinement_prompt, 
             "stream": False
         }
         
-        response = requests.post(ollama_url, json=payload, timeout=2000)
+        response = requests.post(ollama_url, json=payload, timeout=conf.ollama_timeout)
         response.raise_for_status()
         
         refined_template = response.json().get("response", "")
