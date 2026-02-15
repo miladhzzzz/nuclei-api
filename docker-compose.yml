@@ -6,8 +6,7 @@ services:
     ports:
       - "8000:8080"
     volumes:
-      # - /var/run/docker.sock:/var/run/docker.sock
-      - /run/user/1000/docker.sock:/var/run/docker.sock
+      - ${DOCKER_SOCK_PATH:-/var/run/docker.sock}:/var/run/docker.sock
       - ./nuclei-templates:/root/nuclei-templates
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -34,8 +33,7 @@ services:
       replicas: 1
     volumes:
       - ./nuclei-templates/ai:/app/templates
-      # - /var/run/docker.sock:/var/run/docker.sock
-      - /run/user/1000/docker.sock:/var/run/docker.sock
+      - ${DOCKER_SOCK_PATH:-/var/run/docker.sock}:/var/run/docker.sock
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     restart: unless-stopped
