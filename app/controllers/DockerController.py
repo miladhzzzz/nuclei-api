@@ -44,7 +44,10 @@ class ShellDockerController:
                 cmd += f" -v {host_path}:{container_path}"
         cmd += f" {image}"
         if command:
-            cmd += f" {command}"
+            if isinstance(command, list):
+                cmd += " " + " ".join(shlex.quote(str(arg)) for arg in command)
+            else:
+                cmd += f" {command}"
         return self._run_command(cmd)
 
     def stop_container(self, container_id_or_name):
