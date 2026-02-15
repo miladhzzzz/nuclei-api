@@ -5,6 +5,7 @@ import logging
 import time
 import redis
 import json
+import base64
 import asyncio
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
@@ -104,6 +105,7 @@ def refine_nuclei_template(cve_id: str, validation_error: str, current_template:
         Refined template content
     """
     start_time = time.time()
+    conf = config.Config()
     try:
         # Track refinement step
         template_service._track_refinement_step(cve_id, "llm_refinement_start", {
@@ -156,7 +158,6 @@ def refine_nuclei_template(cve_id: str, validation_error: str, current_template:
         })
         
         # Call LLM for refinement
-        conf = config.Config()
         ollama_url = conf.ollama_url or "http://ollama:11434/api/generate"
         payload = {
             "model": conf.llm_model, 
@@ -225,7 +226,7 @@ def fingerprint_target(target: str) -> Optional[str]:
     return scan_service.fingerprint_target(target)
 
 @celery_app.task(bind=True, max_retries=1)
-def run_nuclei_scan(self, os_name: Optional[str], target: str, templates: Optional[List[str]] = None, template_file: Optional[str] = None) -> Dict[str, Any]:
+def run_nuclei_scan(self, target: str, templates: Optional[List[str]] = None, template_file: Optional[str] = None, os_name: Optional[str] = None) -> Dict[str, Any]:
     start_time = time.time()
     try:
         if template_file:
@@ -433,13 +434,20 @@ def validate_target_connectivity(target: Dict[str, Any]) -> Dict[str, Any]:
 def template_validation_pipeline(template_content: str, template_filename: Optional[str] = None) -> Dict[str, Any]:
     """Template validation pipeline"""
     start_time = time.time()
+    temp_path = None
     try:
         # Save template to temporary file if content provided
         if template_content and not template_filename:
             import tempfile
+            try:
+                decoded_content = base64.b64decode(template_content).decode("utf-8")
+            except Exception:
+                # Backward compatibility for plain yaml payloads.
+                decoded_content = template_content
             with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-                f.write(template_content)
+                f.write(decoded_content)
                 template_filename = f.name
+                temp_path = f.name
         
         if not template_filename:
             raise ValueError("No template file or content provided")
@@ -455,13 +463,19 @@ def template_validation_pipeline(template_content: str, template_filename: Optio
             result = {"status": "success", "template_file": template_filename}
         
         duration = time.time() - start_time
-        record_celery_task("template_validation_pipeline", "success", duration)
+        record_celery_task("template_validation_pipeline", result["status"], duration)
         return result
         
     except Exception as e:
         duration = time.time() - start_time
         record_celery_task("template_validation_pipeline", "failed", duration)
         raise
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                logger.warning(f"Failed to remove temporary validation file: {temp_path}")
 
 @celery_app.task(bind=True, max_retries=1)
 def run_scan(self, target: str, templates: Optional[List[str]] = None, prompt: Optional[str] = None):
