@@ -14,3 +14,8 @@ beautifulsoup4==4.12.2
 dnspython==2.4.2
 python-whois==0.8.0
 ipaddress==1.0.23
+sentry-sdk==2.11.0
+prometheus-client==0.20.0
+psutil==6.1.0
+PyYAML==6.0.2
+aiofiles==24.1.0

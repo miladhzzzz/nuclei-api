@@ -3,7 +3,17 @@ import requests
 import time
 import json
 import asyncio
-from helper import *
+from services.helper import (
+    logger,
+    redis_client,
+    TEMPLATE_DIR,
+    OLLAMA_URL_DEFAULT,
+    OLLAMA_TIMEOUT,
+    PROMPT_TEMPLATE,
+    conf,
+    clean_yaml_content,
+    validate_yaml_structure,
+)
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from celery import chain, group, chord
@@ -316,7 +326,7 @@ class TemplateService:
                 if attempt < max_attempts:
                     from celery_tasks.tasks import refine_nuclei_template, store_refined_template, validate_template
                     refinement_chain = chain(
-                        refine_nuclei_template.s(cve_id, template_content),
+                        refine_nuclei_template.s(cve_id, "No vulnerabilities detected in validation scan", template_content),
                         store_refined_template.s(cve_id),
                         validate_template.s(cve_id, max_attempts=max_attempts, attempt=attempt + 1)
                     )
@@ -339,7 +349,7 @@ class TemplateService:
                 if attempt < max_attempts:
                     from celery_tasks.tasks import refine_nuclei_template, store_refined_template, validate_template
                     refinement_chain = chain(
-                        refine_nuclei_template.s(cve_id, template_content, str(e)),
+                        refine_nuclei_template.s(cve_id, str(e), template_content),
                         store_refined_template.s(cve_id),
                         validate_template.s(cve_id, max_attempts=max_attempts, attempt=attempt + 1)
                     )

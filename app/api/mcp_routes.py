@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
-from app.services.helper import ScanService, TemplateService
+from services.ScanService import ScanService
+from services.TemplateService import TemplateService
+from celery_tasks.tasks import run_scan, ai_scan_pipeline, run_custom_template_scan
 import logging
 
 # MCP endpoints for Model Context Protocol (LLM/agent integration)
@@ -112,26 +114,22 @@ def mcp_tool_calls(payload: dict = Body(...)):
             templates = args.get("templates")
             prompt = args.get("prompt")
             if prompt:
-                task = scan_service.run_ai_scan(target, prompt)
+                task = ai_scan_pipeline.delay(target, prompt)
                 return {"result": {"task_id": task.id, "message": "AI scan pipeline started"}}
             else:
-                result = scan_service.run_scan(target, templates)
-                if isinstance(result, dict):
-                    return {"result": result}
-                return {"result": {"task_id": result.id, "message": "Scan pipeline started"}}
+                task = run_scan.delay(target, templates, None)
+                return {"result": {"task_id": task.id, "message": "Scan pipeline started"}}
         elif tool_name == "nuclei_scan_ai":
             target = args["target"]
             prompt = args["prompt"]
-            task = scan_service.run_ai_scan(target, prompt)
+            task = ai_scan_pipeline.delay(target, prompt)
             return {"result": {"task_id": task.id, "message": "AI scan pipeline started"}}
         elif tool_name == "nuclei_scan_custom_template":
             target = args["target"]
             template_content = args["template_content"]
             template_filename = args.get("template_filename")
-            result = scan_service.run_custom_template_scan(target, template_content, template_filename)
-            if "error" in result:
-                return JSONResponse(status_code=500, content={"error": result["error"]})
-            return {"result": {"message": "Custom template scan completed", "scan_result": result}}
+            task = run_custom_template_scan.delay(target, template_content, template_filename)
+            return {"result": {"task_id": task.id, "message": "Custom template scan started"}}
         elif tool_name == "template_upload":
             filename = args["filename"]
             content = args["content"]

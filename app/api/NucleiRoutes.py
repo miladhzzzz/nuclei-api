@@ -179,13 +179,8 @@ async def custom_scan(request: Request, scan_request: ScanRequest):
             logger.warning(f"Invalid target: {scan_request.target}")
             raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
         
-        result = scan_service.run_scan(scan_request.target, scan_request.templates, scan_request.prompt)
-        
-        if isinstance(result, dict) and "error" in result:
-            raise HTTPException(status_code=500, detail=result["error"])
-        
-        # All scans now return Celery tasks
-        return ScanResponse(task_id=result.id, message="Scan pipeline started")
+        task = run_scan.delay(scan_request.target, scan_request.templates, scan_request.prompt)
+        return ScanResponse(task_id=task.id, message="Scan pipeline started")
         
     except HTTPException:
         raise
@@ -201,12 +196,8 @@ async def scan_with_prompt(request: Request, scan_request: ScanWithPromptRequest
             logger.warning(f"Invalid target: {scan_request.target}")
             raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
         
-        result = scan_service.run_scan(scan_request.target, prompt=scan_request.prompt)
-        
-        if isinstance(result, dict) and "error" in result:
-            raise HTTPException(status_code=500, detail=result["error"])
-        
-        return ScanResponse(task_id=result.id, message="AI scan pipeline started")
+        task = ai_scan_pipeline.delay(scan_request.target, scan_request.prompt)
+        return ScanResponse(task_id=task.id, message="AI scan pipeline started")
         
     except HTTPException:
         raise
@@ -296,8 +287,7 @@ async def get_logs(request: Request, container_id: str):
             raise HTTPException(status_code=400, detail="Invalid container ID.")
         async def log_stream():
             logs = []
-            for log_dict in docker_controller.stream_container_logs(container_id):
-                log_line = list(log_dict)[0]
+            for log_line in docker_controller.stream_container_logs(container_id):
                 clean_log = ANSI_ESCAPE.sub('', log_line)
                 logs.append(clean_log)
             for log in logs:

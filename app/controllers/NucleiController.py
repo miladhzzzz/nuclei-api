@@ -66,9 +66,11 @@ class NucleiController:
         
         if template_file:
             # Custom template file
-            is_workflow = self.template_controller.is_nuclei_workflow(template_file)
+            template_name = Path(template_file).name
+            local_template_path = Path(self.nuclei_template) / "custom" / template_name
+            is_workflow = self.template_controller.is_nuclei_workflow(str(local_template_path))
             flag = "-w" if is_workflow else "-t"
-            command.extend([flag, f"custom/{template_file}"])
+            command.extend([flag, f"custom/{template_name}"])
             
         elif cve_id:
             # AI-generated template

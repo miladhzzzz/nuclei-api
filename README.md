@@ -148,6 +148,7 @@ flowchart TD
 - **Redis**
 - **Ollama (or compatible LLM API)**
 - **Node.js 18+ & pnpm** (for frontend development)
+- **make**
 
 ### Clone the Repository
 
@@ -156,19 +157,38 @@ git clone <repository-url>
 cd nuclei-api
 ```
 
+### Quick Start With Makefile
+
+```sh
+# Show all available commands
+make help
+
+# Install backend deps
+make install
+
+# Start full stack (Docker Compose)
+make compose-up
+
+# Tail logs
+make compose-logs
+
+# Stop stack
+make compose-down
+```
+
 ## Docker Deployment
 
 ### Production Deployment
 
 ```sh
 # Build and start all services
-docker-compose up -d
+make compose-up
 
 # View logs
-docker-compose logs -f
+make compose-logs
 
 # Scale services if needed
-docker-compose up -d --scale celery_worker=3
+docker compose -f docker-compose.yml up -d --scale celery_worker=3
 ```
 
 ### Services Included
@@ -185,34 +205,27 @@ The Docker Compose setup includes the following services:
 - **nuclei-fingerprint** (Port 3330): OS fingerprinting service
 - **loki** (Port 3100): Log aggregation and monitoring
 
-### Development with Hot Reload
-
-```sh
-# Start with volume mounts for development
-docker-compose -f docker-compose.dev.yml up -d
-```
-
 ### Staging Environment
 
 ```sh
 # Use staging configuration
-docker-compose -f docker-compose.staging.yaml up -d
+docker compose -f docker-compose.staging.yaml up -d
 ```
 
 ### Service Management
 
 ```sh
 # View service status
-docker-compose ps
+make compose-ps
 
 # View logs for specific service
-docker-compose logs -f nuclei-api
+docker compose -f docker-compose.yml logs -f nuclei-api
 
 # Restart a specific service
-docker-compose restart celery_worker
+docker compose -f docker-compose.yml restart celery_worker
 
 # Scale workers for high load
-docker-compose up -d --scale celery_worker=5
+docker compose -f docker-compose.yml up -d --scale celery_worker=5
 ```
 
 ### Option 2: Development Setup
@@ -220,40 +233,44 @@ docker-compose up -d --scale celery_worker=5
 #### Install Python Dependencies
 
 ```sh
-pip install -r requirements.txt
+make install
 ```
 
 #### Clone Nuclei Templates
 
 ```sh
-git clone https://github.com/projectdiscovery/nuclei-templates.git
+make templates-clone
 ```
 
 #### Start Redis and Ollama
 
 ```sh
-docker-compose up -d redis ollama
+docker compose -f docker-compose.yml up -d redis ollama
 ```
 
 #### Run the API
 
 ```sh
-# From project root (recommended)
-python3 -m app.main
+make run-api
+```
 
-# Or with uvicorn
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
+#### Run Celery Worker and Beat
+
+```sh
+make run-worker
+make run-beat
 ```
 
 #### Run the Frontend (Optional)
 
 ```sh
-cd frontend
-pnpm install
-pnpm dev
+make install-frontend
+pnpm --dir frontend dev
 ```
 
-The API will be available at `http://localhost:8080` and frontend at `http://localhost:3000`.
+Local API (uvicorn) runs on `http://localhost:8080`.  
+Docker Compose exposes API on `http://localhost:8000`.  
+Frontend runs on `http://localhost:3000`.
 
 ---
 
@@ -264,6 +281,7 @@ The API will be available at `http://localhost:8080` and frontend at `http://loc
 ```sh
 curl -X GET http://localhost:8080/nuclei/template/generate
 ```
+
 This will fetch new CVEs, generate templates using the LLM, store, and validate them.
 
 ### 2. **Run a Scan (API)**
@@ -305,12 +323,14 @@ curl http://localhost:8080/nuclei/scan/nuclei_scan_123456/logs
 
 - **POST /nuclei/scan**  
   Request:
+
   ```json
   {
     "target": "https://example.com",
     "templates": ["cves/"] // Optional
   }
   ```
+
   Response:  
   Returns scan result or task ID for async scans.
 
@@ -318,9 +338,9 @@ curl http://localhost:8080/nuclei/scan/nuclei_scan_123456/logs
 
 - **POST /nuclei/scan/custom**  
   Form Data:
-    - `target`: The target domain or IP to scan.
-    - `template_file`: Custom template YAML file (optional).
-    - `templates`: Comma-separated list of templates (optional).
+  - `target`: The target domain or IP to scan.
+  - `template_file`: Custom template YAML file (optional).
+  - `templates`: Comma-separated list of templates (optional).
 
 ### Get Scan Logs
 
@@ -338,6 +358,7 @@ curl http://localhost:8080/nuclei/scan/nuclei_scan_123456/logs
   Run a scan with a custom template file provided by the user.
   
   Request:
+
   ```json
   {
     "target": "https://example.com",
@@ -347,6 +368,7 @@ curl http://localhost:8080/nuclei/scan/nuclei_scan_123456/logs
   ```
   
   Example with curl:
+
   ```sh
   # First, encode your YAML template
   TEMPLATE_B64=$(base64 -w 0 /path/to/your/template.yaml)
@@ -384,6 +406,7 @@ curl http://localhost:8080/nuclei/scan/nuclei_scan_123456/logs
   Health check endpoint with basic metrics and service status.
   
   Returns:
+
   ```json
   {
     "status": "healthy",
@@ -428,6 +451,7 @@ The API exposes endpoints for LLM/agent integration via the Model Context Protoc
   Allows an agent or LLM to invoke any supported tool by name, passing arguments as a JSON object. Returns the result or error.
 
 **Example:**
+
 ```sh
 curl -X POST \
   -H "Content-Type: application/json" \
@@ -453,31 +477,37 @@ The MCP endpoints are implemented in `app/api/mcp_routes.py` and registered in `
 The Nuclei API dashboard provides comprehensive monitoring with the following panels:
 
 #### **API Performance**
+
 - HTTP request rate and duration
 - Response sizes and error rates
 - API endpoint usage patterns
 
 #### **Celery Task Monitoring**
+
 - Task execution rates and durations
 - Queue sizes and worker status
 - Task success/failure rates
 
 #### **Nuclei Scan Metrics**
+
 - Scan execution rates and durations
 - Vulnerability discovery tracking
 - Template usage statistics
 
 #### **Template Pipeline**
+
 - Template generation and validation rates
 - Pipeline execution statistics
 - Success/failure rates by CVE
 
 #### **System Resources**
+
 - CPU, memory, and disk usage
 - Redis memory and connection metrics
 - Docker container statistics
 
 #### **Business Metrics**
+
 - Active scans count
 - Available templates by type
 - Error rates and system health
@@ -492,6 +522,7 @@ The Nuclei API dashboard provides comprehensive monitoring with the following pa
 ### Alerting Setup
 
 Configure alerts in Grafana for:
+
 - High error rates (>5% for 5 minutes)
 - Low Celery worker count (<1 for 5 minutes)
 - High system resource usage (>80% CPU/memory)

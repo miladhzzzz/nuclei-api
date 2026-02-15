@@ -4,3 +4,4 @@ __pycache__
 devtests
 nuclei-templates
 .old
+docker-compose .dev.yml
