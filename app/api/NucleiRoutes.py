@@ -55,7 +55,7 @@ def _queue_or_503(task, *args):
 
 # Legacy endpoints for backward compatibility
 @router.post("/scan", response_model=ScanResponse)
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 async def custom_scan(request: Request, scan_request: ScanRequest):
     try:
         if not (is_valid_domain(scan_request.target) or is_valid_ip(scan_request.target)):
@@ -72,7 +72,7 @@ async def custom_scan(request: Request, scan_request: ScanRequest):
         raise HTTPException(status_code=500, detail="Failed to start scan. Please try again or contact support.")
 
 @router.post("/scans", response_model=ScanResponse)
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 async def comprehensive_scan(request: Request, scan_request: ComprehensiveScanRequest):
     """
     Comprehensive scan endpoint that handles all scan types.
@@ -105,7 +105,7 @@ async def comprehensive_scan(request: Request, scan_request: ComprehensiveScanRe
         raise HTTPException(status_code=500, detail="Failed to start comprehensive scan. Please try again or contact support.")
 
 @router.post("/scans/ai", response_model=ScanResponse)
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 async def scan_with_prompt(request: Request, scan_request: ScanWithPromptRequest):
     try:
         if not (is_valid_domain(scan_request.target) or is_valid_ip(scan_request.target)):
