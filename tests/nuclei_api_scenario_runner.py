@@ -451,22 +451,6 @@ def main():
     test_custom_template_scan()
     test_legacy_endpoints()
     test_template_upload()
-    
-    print("\n" + "="*60)
-    print("SCENARIO RUN COMPLETE")
-    print("="*60)
-    print("\nThe enhanced Nuclei API now supports:")
-    print("✅ Comprehensive scan endpoint with multiple scan types")
-    print("✅ Auto scan with intelligent template selection")
-    print("✅ Fingerprint scan with OS-specific templates")
-    print("✅ AI scan with custom prompts")
-    print("✅ Custom template scan with validation")
-    print("✅ Workflow scan support")
-    print("✅ Standalone fingerprinting")
-    print("✅ Template validation")
-    print("✅ Template upload")
-    print("✅ Legacy endpoint compatibility")
-    print("\nAll scan types are now available through a unified API!")
 
     if FAILED_SCENARIOS:
         print("\nFailures:")
