@@ -198,12 +198,14 @@ def test_fingerprinting():
             print(f"✅ Fingerprinting started for {target}")
             print(f"   Task ID: {task_id}")
             
-            # Wait for completion
-            task_result = wait_for_task_completion(task_id)
-            if "error" not in task_result:
-                fingerprint_result = task_result.get("result", {})
-                print(f"   OS Detected: {fingerprint_result.get('os_detected', 'Unknown')}")
-                print(f"   Recommended Templates: {fingerprint_result.get('recommended_templates', [])}")
+            if WAIT_FOR_COMPLETION:
+                task_result = wait_for_task_completion(task_id)
+                if "error" not in task_result:
+                    fingerprint_result = task_result.get("result", {})
+                    print(f"   OS Detected: {fingerprint_result.get('os_detected', 'Unknown')}")
+                    print(f"   Recommended Templates: {fingerprint_result.get('recommended_templates', [])}")
+                else:
+                    record_failure(f"Fingerprint {target}", task_result["error"])
         else:
             record_failure(f"Fingerprint {target}", result["error"])
 
@@ -265,22 +267,24 @@ requests:
             print(f"✅ Template validation started")
             print(f"   Task ID: {task_id}")
             
-            # Wait for completion
-            task_result = wait_for_task_completion(task_id)
-            if "error" not in task_result:
-                validation_result = task_result.get("result", {})
-                is_valid = validation_result.get("is_valid", False)
-                print(f"   Is Valid: {is_valid}")
-                if not is_valid:
-                    print(f"   Error: {validation_result.get('validation_error', 'Unknown error')}")
-                
-                if is_valid == template_test["expected"]:
-                    print(f"   ✅ Expected result: {template_test['expected']}")
+            if WAIT_FOR_COMPLETION:
+                task_result = wait_for_task_completion(task_id)
+                if "error" not in task_result:
+                    validation_result = task_result.get("result", {})
+                    is_valid = validation_result.get("is_valid", False)
+                    print(f"   Is Valid: {is_valid}")
+                    if not is_valid:
+                        print(f"   Error: {validation_result.get('validation_error', 'Unknown error')}")
+                    
+                    if is_valid == template_test["expected"]:
+                        print(f"   ✅ Expected result: {template_test['expected']}")
+                    else:
+                        record_failure(
+                            f"Template Validation {template_test['name']}",
+                            f"expected {template_test['expected']}, got {is_valid}"
+                        )
                 else:
-                    record_failure(
-                        f"Template Validation {template_test['name']}",
-                        f"expected {template_test['expected']}, got {is_valid}"
-                    )
+                    record_failure(f"Template Validation {template_test['name']}", task_result["error"])
         else:
             record_failure(f"Template Validation {template_test['name']}", result["error"])
 
