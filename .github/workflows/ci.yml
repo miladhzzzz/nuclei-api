@@ -156,10 +156,10 @@ jobs:
       - name: Run API scenario runner (verbose output)
         env:
           API_BASE_URL: http://localhost:8000
-          SCENARIO_WAIT_FOR_COMPLETION: "false"
+          SCENARIO_WAIT_FOR_COMPLETION: "true"
         run: |
           set -euo pipefail
-          python tests/nuclei_api_scenario_runner.py | tee /tmp/nuclei_api_scenarios.log
+          python3 tests/nuclei_api_scenario_runner.py | tee /tmp/nuclei_api_scenarios.log
 
       - name: Dump service logs on failure
         if: failure()
