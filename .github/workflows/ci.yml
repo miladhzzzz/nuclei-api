@@ -92,7 +92,7 @@ jobs:
       - name: Start stack for integration checks
         run: |
           cp sample.env .env
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d redis celery_worker nuclei-api
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d redis celery_worker nuclei-api nuclei-fingerprint
 
       - name: Wait for API readiness
         run: |
