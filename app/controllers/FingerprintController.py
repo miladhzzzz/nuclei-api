@@ -1,22 +1,29 @@
 import requests
 import logging
 from typing import Dict, Optional
+from helpers.config import Config
 
 logger = logging.getLogger(__name__)
 
 class FingerprintController:
     def __init__(self):
-        self.fingerprint_url = "http://nuclei-fingerprint:3000/"
+        self.conf = Config()
+        self.fingerprint_url = self.conf.fingerprint_url
         
     def fingerprint_target(self, target: str) -> Optional[str]:
         """Basic fingerprinting using the fingerprint service"""
         data = {
             "ip": target,
-            "scanType": "quickOsAndPorts"
+            "scanType": self.conf.fingerprint_quick_scan_type
         }
         headers = {'Content-Type': 'application/json'}
         try:
-            response = requests.post(self.fingerprint_url + "scan/ip/", json=data, headers=headers, timeout=2000)
+            response = requests.post(
+                self.fingerprint_url + "scan/ip/",
+                json=data,
+                headers=headers,
+                timeout=self.conf.fingerprint_quick_timeout
+            )
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -26,11 +33,16 @@ class FingerprintController:
         """Comprehensive fingerprinting using the fingerprint service"""
         data = {
             "ip": target,
-            "scanType": "aggressiveOsAndPort"
+            "scanType": self.conf.fingerprint_aggressive_scan_type
         }
         headers = {'Content-Type': 'application/json'}
         try:
-            response = requests.post(self.fingerprint_url + "scan/ip/", json=data, headers=headers, timeout=3000)
+            response = requests.post(
+                self.fingerprint_url + "scan/ip/",
+                json=data,
+                headers=headers,
+                timeout=self.conf.fingerprint_aggressive_timeout
+            )
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:

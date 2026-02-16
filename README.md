@@ -279,7 +279,7 @@ Frontend runs on `http://localhost:3000`.
 ### 1. **Trigger the Automated Template Generation Pipeline**
 
 ```sh
-curl -X GET http://localhost:8080/nuclei/template/generate
+curl -X GET http://localhost:8080/nuclei/templates/generate
 ```
 
 This will fetch new CVEs, generate templates using the LLM, store, and validate them.
@@ -291,23 +291,23 @@ This will fetch new CVEs, generate templates using the LLM, store, and validate 
 ```sh
 curl -X POST \
   -H "Content-Type: application/json" \
-  -d '{ "target": "https://example.com", "templates": ["cves/"] }' \
-  http://localhost:8080/nuclei/scan
+  -d '{ "target": "https://example.com", "scan_type": "standard", "templates": ["cves/"] }' \
+  http://localhost:8080/nuclei/scans
 ```
 
-#### Custom Template Scan
+#### AI Scan
 
 ```sh
 curl -X POST \
-  -F "target=https://example.com" \
-  -F "template_file=@/path/to/custom-template.yaml" \
-  http://localhost:8080/nuclei/scan/custom
+  -H "Content-Type: application/json" \
+  -d '{ "target": "https://example.com", "prompt": "Scan for SQLi" }' \
+  http://localhost:8080/nuclei/scans/ai
 ```
 
 #### Fetch Scan Logs
 
 ```sh
-curl http://localhost:8080/nuclei/scan/nuclei_scan_123456/logs
+curl http://localhost:8080/nuclei/containers/nuclei_scan_123456/logs
 ```
 
 ---
@@ -321,71 +321,67 @@ curl http://localhost:8080/nuclei/scan/nuclei_scan_123456/logs
 
 ### Run a Scan
 
-- **POST /nuclei/scan**  
+- **POST /nuclei/scans**  
   Request:
-
   ```json
   {
     "target": "https://example.com",
+    "scan_type": "standard",
     "templates": ["cves/"] // Optional
   }
   ```
-
   Response:  
-  Returns scan result or task ID for async scans.
+  Returns task ID for async scan execution.
 
-### Run a Custom Scan
+### Run an AI Scan
 
-- **POST /nuclei/scan/custom**  
-  Form Data:
-  - `target`: The target domain or IP to scan.
-  - `template_file`: Custom template YAML file (optional).
-  - `templates`: Comma-separated list of templates (optional).
-
-### Get Scan Logs
-
-- **GET /nuclei/scan/{container_id}/logs**  
-  Streams logs from the running scan container.
-
-### Upload a Custom Template
-
-- **POST /nuclei/template/upload**  
-  Upload and validate a custom Nuclei template.
-
-### Scan with Custom Template
-
-- **POST /nuclei/scan/custom-template**  
-  Run a scan with a custom template file provided by the user.
-  
+- **POST /nuclei/scans/ai**  
   Request:
-
   ```json
   {
     "target": "https://example.com",
-    "template_file": "base64_encoded_yaml_content",
-    "template_filename": "custom-template.yaml"
+    "prompt": "Generate a template for XSS"
   }
   ```
-  
-  Example with curl:
 
-  ```sh
-  # First, encode your YAML template
-  TEMPLATE_B64=$(base64 -w 0 /path/to/your/template.yaml)
-  
-  curl -X POST \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"target\": \"https://example.com\",
-      \"template_file\": \"$TEMPLATE_B64\",
-      \"template_filename\": \"my-custom-template.yaml\"
-    }" \
-    http://localhost:8080/nuclei/scan/custom-template
-  ```
+### Legacy Scan Endpoint (Backward Compatibility)
+
+- **POST /nuclei/scan**  
+  Legacy alias preserved for older clients.
+
+### Get Task Status
+
+- **GET /nuclei/tasks/{task_id}**  
+  Fetch status/result for Celery tasks and scan containers.
+
+### Get Container Logs
+
+- **GET /nuclei/containers/{container_id}/logs**  
+  Streams logs from the running scan container.
+
+### Get Container Status
+
+- **GET /nuclei/containers/{container_name}/status**  
+  Returns running/exited/error status for a container.
+
+### Fingerprint Target
+
+- **POST /nuclei/fingerprints**  
+  Queue standalone target fingerprinting.
+
+### Upload a Custom Template
+
+- **POST /nuclei/templates/upload**  
+  Upload and validate a custom Nuclei template file.
+
+### Validate Template Content
+
+- **POST /nuclei/templates/validate**  
+  Validate template content asynchronously.
 
 ### Trigger Template Generation Pipeline
 
-- **GET /nuclei/template/generate**  
+- **GET /nuclei/templates/generate**  
   Starts the full CVE-to-template pipeline.
 
 ### Prometheus Metrics

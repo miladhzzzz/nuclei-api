@@ -141,7 +141,7 @@ jobs:
 
           final_status = None
           for _ in range(90):
-              status = requests.get(f"{base_url}/nuclei/task/{task_id}", timeout=30)
+              status = requests.get(f"{base_url}/nuclei/tasks/{task_id}", timeout=30)
               status.raise_for_status()
               payload = status.json()
               final_status = payload.get("status")

@@ -1,6 +1,6 @@
 import docker
 from docker.errors import DockerException, NotFound
-from typing import Iterator, Dict, Optional
+from typing import Iterator, Dict, Optional, List, Union
 
 
 class DockerController:
@@ -40,8 +40,8 @@ class DockerController:
         ports: Optional[Dict[str, str]] = None,
         detach: bool = True,
         environment: Optional[Dict[str, str]] = None,
-        volumes: Optional[Dict[str, Dict[str, str]]] = None,
-        command: Optional[str] = None,
+        volumes: Optional[Dict[str, object]] = None,
+        command: Optional[Union[str, List[str]]] = None,
     ):
         """
         Run a container.
@@ -56,15 +56,21 @@ class DockerController:
                     "mode": "rw"
                 }
             }
+
+        Also supports shell-style shorthand used by legacy callers:
+            {
+                "/host/path": "/container/path"
+            }
         """
         try:
+            normalized_volumes = self._normalize_volumes(volumes)
             container = self.client.containers.run(
                 image=image,
                 name=name,
                 ports=ports,
                 detach=detach,
                 environment=environment,
-                volumes=volumes,
+                volumes=normalized_volumes,
                 command=command,
             )
             return {
@@ -74,6 +80,27 @@ class DockerController:
             }
         except DockerException as e:
             return {"error": str(e)}
+
+    def _normalize_volumes(self, volumes: Optional[Dict[str, object]]) -> Optional[Dict[str, Dict[str, str]]]:
+        if not volumes:
+            return None
+
+        normalized: Dict[str, Dict[str, str]] = {}
+        for host_path, mount in volumes.items():
+            if isinstance(mount, str):
+                normalized[host_path] = {"bind": mount, "mode": "rw"}
+                continue
+
+            if isinstance(mount, dict):
+                bind = mount.get("bind") or mount.get("target")
+                mode = mount.get("mode", "rw")
+                if bind:
+                    normalized[host_path] = {"bind": bind, "mode": mode}
+                    continue
+
+            raise ValueError(f"Invalid volume format for {host_path}: {mount}")
+
+        return normalized
 
     def stop_container(self, container_id_or_name: str):
         try:

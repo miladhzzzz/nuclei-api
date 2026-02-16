@@ -47,7 +47,7 @@ def wait_for_task_completion(task_id: str, max_wait: int = 300) -> Dict[str, Any
     
     start_time = time.time()
     while time.time() - start_time < max_wait:
-        result = make_request(f"/task/{task_id}")
+        result = make_request(f"/nuclei/tasks/{task_id}")
         
         if result.get("status") in ["SUCCESS", "FAILURE"]:
             print(f"Task {task_id} completed with status: {result.get('status')}")
@@ -110,7 +110,7 @@ def test_comprehensive_scan():
             scan_request["use_fingerprinting"] = scan_config["use_fingerprinting"]
         
         # Make request
-        result = make_request("/scan/comprehensive", "POST", scan_request)
+        result = make_request("/nuclei/scans", "POST", scan_request)
         
         if "error" not in result:
             task_id = result.get("task_id")
@@ -139,7 +139,7 @@ def test_individual_scan_endpoints():
         "templates": ["http/", "cves/"],
         "use_fingerprinting": True
     }
-    result = make_request("/scan/auto", "POST", auto_scan_data)
+    result = make_request("/nuclei/scans", "POST", {"scan_type": "auto", **auto_scan_data})
     if "error" not in result:
         print(f"✅ Auto scan started: {result.get('task_id')}")
     else:
@@ -151,7 +151,7 @@ def test_individual_scan_endpoints():
         "target": "google.com",
         "templates": ["http/"]
     }
-    result = make_request("/scan/fingerprint", "POST", fingerprint_data)
+    result = make_request("/nuclei/scans", "POST", {"scan_type": "fingerprint", **fingerprint_data})
     if "error" not in result:
         print(f"✅ Fingerprint scan started: {result.get('task_id')}")
     else:
@@ -163,7 +163,7 @@ def test_individual_scan_endpoints():
         "target": "example.com",
         "prompt": "Find open ports and common vulnerabilities"
     }
-    result = make_request("/scan/ai", "POST", ai_scan_data)
+    result = make_request("/nuclei/scans/ai", "POST", ai_scan_data)
     if "error" not in result:
         print(f"✅ AI scan started: {result.get('task_id')}")
     else:
@@ -179,7 +179,7 @@ def test_fingerprinting():
         print(f"\n--- Fingerprinting {target} ---")
         
         fingerprint_data = {"target": target}
-        result = make_request("/fingerprint", "POST", fingerprint_data)
+        result = make_request("/nuclei/fingerprints", "POST", fingerprint_data)
         
         if "error" not in result:
             task_id = result.get("task_id")
@@ -246,7 +246,7 @@ requests:
             "template_filename": f"{template_test['name'].lower().replace(' ', '-')}.yaml"
         }
         
-        result = make_request("/template/validate", "POST", validation_data)
+        result = make_request("/nuclei/templates/validate", "POST", validation_data)
         
         if "error" not in result:
             task_id = result.get("task_id")
@@ -300,11 +300,12 @@ requests:
     
     custom_scan_data = {
         "target": "example.com",
-        "template_file": encoded_content,
-        "template_filename": "custom-test-template.yaml"
+        "scan_type": "custom",
+        "template_content": encoded_content,
+        "template_file": "custom-test-template.yaml"
     }
     
-    result = make_request("/scan/custom-template", "POST", custom_scan_data)
+    result = make_request("/nuclei/scans", "POST", custom_scan_data)
     
     if "error" not in result:
         task_id = result.get("task_id")
@@ -333,23 +334,23 @@ def test_legacy_endpoints():
         "target": "example.com",
         "templates": ["http/"]
     }
-    result = make_request("/scan", "POST", legacy_scan_data)
+    result = make_request("/nuclei/scan", "POST", legacy_scan_data)
     if "error" not in result:
         print(f"✅ Legacy scan started: {result.get('task_id')}")
     else:
         print(f"❌ Legacy scan failed: {result['error']}")
     
-    # Test legacy AI scan endpoint
-    print("\n--- Testing Legacy AI Scan Endpoint ---")
-    legacy_ai_data = {
+    # AI endpoint
+    print("\n--- Testing AI Scan Endpoint ---")
+    ai_data = {
         "target": "google.com",
         "prompt": "Find common web vulnerabilities"
     }
-    result = make_request("/scan/ai", "POST", legacy_ai_data)
+    result = make_request("/nuclei/scans/ai", "POST", ai_data)
     if "error" not in result:
-        print(f"✅ Legacy AI scan started: {result.get('task_id')}")
+        print(f"✅ AI scan started: {result.get('task_id')}")
     else:
-        print(f"❌ Legacy AI scan failed: {result['error']}")
+        print(f"❌ AI scan failed: {result['error']}")
 
 def test_template_upload():
     """Test template upload functionality."""
@@ -386,7 +387,7 @@ requests:
         # Upload template
         with open(temp_file_path, 'rb') as f:
             files = {'template_file': ('test-template.yaml', f, 'application/x-yaml')}
-            result = make_request("/template/upload", "POST", files=files)
+            result = make_request("/nuclei/templates/upload", "POST", files=files)
         
         if "error" not in result:
             print(f"✅ Template uploaded successfully")

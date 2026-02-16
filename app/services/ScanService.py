@@ -25,15 +25,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 conf = config.Config()
-redis_client = redis.Redis(
-    host="redis",
-    port=6379,
-    db=0,
-    decode_responses=True
-)
-TEMPLATE_DIR = Path("/app/templates")
-OLLAMA_URL_DEFAULT = "http://ollama:11434/api/generate"
-OLLAMA_TIMEOUT = 2000
+redis_client = redis.Redis.from_url(conf.redis_url, decode_responses=True)
+TEMPLATE_DIR = Path(conf.template_dir)
+OLLAMA_URL_DEFAULT = conf.ollama_url
+OLLAMA_TIMEOUT = conf.ollama_timeout
 
 try:
     with open(os.path.join(os.path.dirname(__file__), "../celery_tasks/template.txt"), "r") as f:
@@ -45,6 +40,7 @@ except FileNotFoundError:
 
 class ScanService:
     def __init__(self):
+        self.conf = config.Config()
         self.nuclei_controller = NucleiController()
         self.fingerprint_controller = FingerprintController()
         self.template_controller = TemplateController()
@@ -239,8 +235,7 @@ class ScanService:
             logger.info(f"Starting AI scan for {target} with prompt: {prompt}")
             
             # Generate template using LLM
-            conf = config.Config()
-            ollama_url = conf.ollama_url or OLLAMA_URL_DEFAULT
+            ollama_url = self.conf.ollama_url or OLLAMA_URL_DEFAULT
             
             # Create enhanced prompt for template generation
             template_prompt = f"""
@@ -265,7 +260,7 @@ Generate the template:
             
             # Call LLM to generate template
             payload = {
-                "model": conf.llm_model,
+                "model": self.conf.llm_model,
                 "prompt": template_prompt,
                 "stream": False
             }
@@ -285,7 +280,7 @@ Generate the template:
                 logger.warning(f"Generated template has issues: {error_msg}")
                 return {"error": f"Generated template is invalid: {error_msg}"}
             
-            upload_dir = Path(conf.nuclei_upload_template_path or "/root/nuclei-templates/custom")
+            upload_dir = Path(self.conf.nuclei_upload_template_path)
             upload_dir.mkdir(parents=True, exist_ok=True)
             template_filename = f"ai-{uuid.uuid4().hex}.yaml"
             template_path = upload_dir / template_filename
@@ -318,7 +313,7 @@ Generate the template:
             start_time = time.time()
             
             # Determine template source
-            upload_dir = Path(conf.nuclei_upload_template_path or "/root/nuclei-templates/custom")
+            upload_dir = Path(self.conf.nuclei_upload_template_path)
             upload_dir.mkdir(parents=True, exist_ok=True)
 
             if template_content:
@@ -373,7 +368,7 @@ Generate the template:
         try:
             start_time = time.time()
             
-            upload_dir = Path(conf.nuclei_upload_template_path or "/root/nuclei-templates/custom")
+            upload_dir = Path(self.conf.nuclei_upload_template_path)
             workflow_name = os.path.basename(workflow_file)
             workflow_path = upload_dir / workflow_name
 

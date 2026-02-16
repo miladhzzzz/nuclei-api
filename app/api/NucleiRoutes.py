@@ -43,7 +43,35 @@ def is_valid_ip(value: str) -> bool:
         pass
     return False
 
-@router.post("/scan/comprehensive", response_model=ScanResponse)
+def _queue_or_503(task, *args):
+    try:
+        return task.delay(*args)
+    except (OperationalError, RedisConnectionError) as exc:
+        logger.error("Queue unavailable while dispatching v2 request: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Queue is temporarily unavailable (Redis/Celery). Please retry shortly.",
+        )
+
+# Legacy endpoints for backward compatibility
+@router.post("/scan", response_model=ScanResponse)
+@limiter.limit("5/minute")
+async def custom_scan(request: Request, scan_request: ScanRequest):
+    try:
+        if not (is_valid_domain(scan_request.target) or is_valid_ip(scan_request.target)):
+            logger.warning(f"Invalid target: {scan_request.target}")
+            raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
+        
+        task = run_scan.delay(scan_request.target, scan_request.templates, scan_request.prompt)
+        return ScanResponse(task_id=task.id, message="Scan pipeline started")
+        
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error in /scan endpoint for target {scan_request.target}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to start scan. Please try again or contact support.")
+
+@router.post("/scans", response_model=ScanResponse)
 @limiter.limit("5/minute")
 async def comprehensive_scan(request: Request, scan_request: ComprehensiveScanRequest):
     """
@@ -76,61 +104,24 @@ async def comprehensive_scan(request: Request, scan_request: ComprehensiveScanRe
         logger.error(f"Error in /scan/comprehensive endpoint for target {scan_request.target}: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to start comprehensive scan. Please try again or contact support.")
 
-@router.post("/scan/auto", response_model=ScanResponse)
+@router.post("/scans/ai", response_model=ScanResponse)
 @limiter.limit("5/minute")
-async def auto_scan(request: Request, target: str = Body(..., embed=True), templates: Optional[List[str]] = Body(None, embed=True), use_fingerprinting: bool = Body(True, embed=True)):
-    """Auto scan with intelligent template selection."""
+async def scan_with_prompt(request: Request, scan_request: ScanWithPromptRequest):
     try:
-        if not (is_valid_domain(target) or is_valid_ip(target)):
-            logger.warning(f"Invalid target: {target}")
+        if not (is_valid_domain(scan_request.target) or is_valid_ip(scan_request.target)):
+            logger.warning(f"Invalid target: {scan_request.target}")
             raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
         
-        task = auto_scan_pipeline.delay(target, templates, use_fingerprinting)
-        return ScanResponse(task_id=task.id, message="Auto scan started")
+        task = ai_scan_pipeline.delay(scan_request.target, scan_request.prompt)
+        return ScanResponse(task_id=task.id, message="AI scan pipeline started")
         
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error(f"Error in /scan/auto endpoint for target {target}: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to start auto scan. Please try again or contact support.")
+        logger.error(f"Error in /scan/ai endpoint for target {scan_request.target}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to start AI scan. Please try again or contact support.")
 
-@router.post("/scan/fingerprint", response_model=ScanResponse)
-@limiter.limit("5/minute")
-async def fingerprint_scan(request: Request, target: str = Body(..., embed=True), templates: Optional[List[str]] = Body(None, embed=True)):
-    """Scan with fingerprinting and OS-specific templates."""
-    try:
-        if not (is_valid_domain(target) or is_valid_ip(target)):
-            logger.warning(f"Invalid target: {target}")
-            raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
-        
-        task = fingerprint_scan_pipeline.delay(target, templates)
-        return ScanResponse(task_id=task.id, message="Fingerprint scan started")
-        
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error(f"Error in /scan/fingerprint endpoint for target {target}: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to start fingerprint scan. Please try again or contact support.")
-
-@router.post("/scan/workflow", response_model=ScanResponse)
-@limiter.limit("5/minute")
-async def workflow_scan(request: Request, target: str = Body(..., embed=True), workflow_file: str = Body(..., embed=True)):
-    """Scan using workflow file."""
-    try:
-        if not (is_valid_domain(target) or is_valid_ip(target)):
-            logger.warning(f"Invalid target: {target}")
-            raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
-        
-        task = workflow_scan_pipeline.delay(target, workflow_file)
-        return ScanResponse(task_id=task.id, message="Workflow scan started")
-        
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error(f"Error in /scan/workflow endpoint for target {target}: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to start workflow scan. Please try again or contact support.")
-
-@router.post("/fingerprint", response_model=FingerprintResponse)
+@router.post("/fingerprints", response_model=FingerprintResponse)
 @limiter.limit("10/minute")
 async def fingerprint_target_endpoint(request: Request, fingerprint_request: FingerprintRequest):
     """Fingerprint a target without running a scan."""
@@ -152,60 +143,7 @@ async def fingerprint_target_endpoint(request: Request, fingerprint_request: Fin
         logger.error(f"Error in /fingerprint endpoint for target {fingerprint_request.target}: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to start fingerprinting. Please try again or contact support.")
 
-@router.post("/template/validate", response_model=TemplateUploadResponse)
-@limiter.limit("10/minute")
-async def validate_template_endpoint(request: Request, template_content: str = Body(..., embed=True), template_filename: Optional[str] = Body(None, embed=True)):
-    """Validate a template without running a scan."""
-    try:
-        task = template_validation_pipeline.delay(template_content, template_filename)
-        return TemplateUploadResponse(
-            filename=template_filename or "template.yaml",
-            message="Template validation started",
-            task_id=task.id
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error(f"Error in /template/validate endpoint: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to validate template. Please try again or contact support.")
-
-# Legacy endpoints for backward compatibility
-@router.post("/scan", response_model=ScanResponse)
-@limiter.limit("5/minute")
-async def custom_scan(request: Request, scan_request: ScanRequest):
-    try:
-        if not (is_valid_domain(scan_request.target) or is_valid_ip(scan_request.target)):
-            logger.warning(f"Invalid target: {scan_request.target}")
-            raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
-        
-        task = run_scan.delay(scan_request.target, scan_request.templates, scan_request.prompt)
-        return ScanResponse(task_id=task.id, message="Scan pipeline started")
-        
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error(f"Error in /scan endpoint for target {scan_request.target}: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to start scan. Please try again or contact support.")
-
-@router.post("/scan/ai", response_model=ScanResponse)
-@limiter.limit("5/minute")
-async def scan_with_prompt(request: Request, scan_request: ScanWithPromptRequest):
-    try:
-        if not (is_valid_domain(scan_request.target) or is_valid_ip(scan_request.target)):
-            logger.warning(f"Invalid target: {scan_request.target}")
-            raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
-        
-        task = ai_scan_pipeline.delay(scan_request.target, scan_request.prompt)
-        return ScanResponse(task_id=task.id, message="AI scan pipeline started")
-        
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error(f"Error in /scan/ai endpoint for target {scan_request.target}: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to start AI scan. Please try again or contact support.")
-
-@router.get("/task/{task_id}", response_model=TaskStatusResponse)
+@router.get("/tasks/{task_id}", response_model=TaskStatusResponse)
 async def get_task_status(request: Request, task_id: str):
     try:
         # Check if this is a container name (nuclei_scan_XXXXXX format)
@@ -277,7 +215,7 @@ async def get_task_status(request: Request, task_id: str):
         logger.error(f"Error in /task/{task_id} endpoint: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch task status. Please try again or contact support.")
 
-@router.get("/scan/{container_id}/logs", response_class=StreamingResponse)
+@router.get("/containers/{container_id}/logs", response_class=StreamingResponse)
 @limiter.limit("20/minute")
 async def get_logs(request: Request, container_id: str):
     try:
@@ -297,38 +235,7 @@ async def get_logs(request: Request, container_id: str):
         logger.error(f"Error in /scan/{container_id}/logs endpoint: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch logs. Please try again or contact support.")
 
-@router.get("/container/{container_name}/logs")
-@limiter.limit("20/minute")
-async def get_container_logs(request: Request, container_name: str):
-    """
-    Get logs for any container by name.
-    Useful for debugging and monitoring scan progress.
-    """
-    try:
-        docker_controller = DockerController()
-        
-        # Validate container name format
-        if not re.match(r"^[a-zA-Z0-9_-]+$", container_name):
-            logger.warning(f"Invalid container name format: {container_name}")
-            raise HTTPException(status_code=400, detail="Invalid container name format.")
-        
-        # Get container status first
-        container_status = docker_controller.get_container_status(container_name)
-        if "error" in container_status:
-            raise HTTPException(status_code=404, detail=f"Container not found: {container_name}")
-        
-        # Get container logs
-        logs = docker_controller.get_container_logs(container_name)
-        
-        return {"container_name": container_name, "logs": logs, "status": container_status}
-        
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error(f"Error in /container/{container_name}/logs endpoint: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch container logs. Please try again or contact support.")
-
-@router.get("/container/{container_name}/status")
+@router.get("/containers/{container_name}/status")
 @limiter.limit("20/minute")
 async def get_container_status(request: Request, container_name: str):
     """
@@ -356,7 +263,25 @@ async def get_container_status(request: Request, container_name: str):
         logger.error(f"Error in /container/{container_name}/status endpoint: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch container status. Please try again or contact support.")
 
-@router.post("/template/upload")
+@router.post("/templates/validate", response_model=TemplateUploadResponse)
+@limiter.limit("10/minute")
+async def validate_template_endpoint(request: Request, template_content: str = Body(..., embed=True), template_filename: Optional[str] = Body(None, embed=True)):
+    """Validate a template without running a scan."""
+    try:
+        task = template_validation_pipeline.delay(template_content, template_filename)
+        return TemplateUploadResponse(
+            filename=template_filename or "template.yaml",
+            message="Template validation started",
+            task_id=task.id
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error in /template/validate endpoint: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to validate template. Please try again or contact support.")
+
+@router.post("/templates/upload")
 @limiter.limit("5/minute")
 async def upload_template(request: Request, template_file: UploadFile = File(...)):
     try:
@@ -380,7 +305,7 @@ async def upload_template(request: Request, template_file: UploadFile = File(...
         logger.error(f"Error in /template/upload endpoint: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to upload template. Please try again or contact support.")
 
-@router.get("/template/generate")
+@router.get("/templates/generate")
 @limiter.limit("1/minute")
 async def template_generate(request: Request):
     try:
@@ -389,20 +314,3 @@ async def template_generate(request: Request):
     except Exception as exc:
         logger.error(f"Error in /template/generate endpoint: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to start template generation. Please try again or contact support.")
-
-@router.post("/scan/custom-template", response_model=ScanResponse)
-@limiter.limit("5/minute")
-async def scan_with_custom_template(request: Request, scan_request: CustomTemplateScanRequest):
-    try:
-        if not (is_valid_domain(scan_request.target) or is_valid_ip(scan_request.target)):
-            logger.warning(f"Invalid target: {scan_request.target}")
-            raise HTTPException(status_code=400, detail="Invalid target. Must be a valid FQDN or IP address.")
-        
-        task = run_custom_template_scan.delay(scan_request.target, scan_request.template_file, scan_request.template_filename)
-        return ScanResponse(task_id=task.id, message="Custom template scan started")
-        
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error(f"Error in /scan/custom-template endpoint for target {scan_request.target}: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to start custom template scan. Please try again or contact support.")

@@ -14,7 +14,7 @@ class NucleiController:
         self.docker = docker_controller or DockerController()
         self.template_controller = template_controller or TemplateController()
         self.conf = conf or Config()
-        self.nuclei_image = "projectdiscovery/nuclei:latest"
+        self.nuclei_image = self.conf.nuclei_image
         self.nuclei_template = self.conf.nuclei_template_path
 
     def generate_scan_id(self) -> int:
@@ -92,9 +92,28 @@ class NucleiController:
         
         return command
 
+    def _normalize_templates(self, templates: Optional[List[str]]) -> List[str]:
+        if not templates:
+            return []
+
+        normalized: List[str] = []
+        for item in templates:
+            if item is None:
+                continue
+
+            text = str(item).strip()
+            if not text:
+                continue
+
+            # Support clients sending one template string containing commas or spaces.
+            parts = text.replace(",", " ").split()
+            normalized.extend(parts if parts else [text])
+
+        return normalized
+
     def _get_volume_mounts(self) -> Dict[str, str]:
         """Get volume mounts for Nuclei templates."""
-        return {f"{self.nuclei_template}": "/root/nuclei-templates"}
+        return {f"{self.nuclei_template}": self.conf.nuclei_container_template_path}
 
     def run_nuclei_scan(self, target: str, template: Optional[List[str]] = None, 
                        template_file: Optional[str] = None, cve_id: Optional[str] = None) -> Dict[str, str]:
@@ -132,10 +151,11 @@ class NucleiController:
             scan_id = self.generate_scan_id()
             container_name = f"nuclei_scan_{scan_id}"
             
-            # Run container
+            # Run container. Pass argv list so Docker SDK does not receive a single
+            # shell-form command string.
             container_id = self.docker.run_container(
                 image=self.nuclei_image,
-                command=" ".join(command),
+                command=command,
                 detach=True,
                 name=container_name,
                 volumes=volumes

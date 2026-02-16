@@ -17,19 +17,16 @@ import psutil
 import os
 from typing import Dict, Any
 import logging
+from helpers.config import Config
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+conf = Config()
 
 # Redis client for metrics
-redis_client = redis.Redis(
-    host="redis",
-    port=6379,
-    db=0,
-    decode_responses=True
-)
+redis_client = redis.Redis.from_url(conf.redis_url, decode_responses=True)
 
 # FastAPI Metrics
 http_requests_total = Counter(

@@ -4,6 +4,7 @@ from pathlib import Path
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from fastapi import APIRouter, HTTPException, Request
+from helpers.config import Config
 
 # Configure logging (consistent with tasks.py)
 logging.basicConfig(
@@ -14,15 +15,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-TEMPLATE_DIR = Path("/app/templates")
+conf = Config()
+TEMPLATE_DIR = Path(conf.template_dir)
 
 # Redis client (same config as tasks.py)
-redis_client = redis.Redis(
-    host="redis",
-    port=6379,
-    db=0,
-    decode_responses=True
-)
+redis_client = redis.Redis.from_url(conf.redis_url, decode_responses=True)
 
 @router.get("/metrics", response_model=Dict[str, Any])
 async def get_pipeline_metrics():

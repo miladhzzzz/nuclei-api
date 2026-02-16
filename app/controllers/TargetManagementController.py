@@ -9,17 +9,14 @@ import asyncio
 import aiohttp
 from urllib.parse import urlparse
 import dns.resolver
+from helpers.config import Config
 
 logger = logging.getLogger(__name__)
 
 class TargetManagementController:
     def __init__(self):
-        self.redis_client = redis.Redis(
-            host="redis",
-            port=6379,
-            db=0,
-            decode_responses=True
-        )
+        conf = Config()
+        self.redis_client = redis.Redis.from_url(conf.redis_url, decode_responses=True)
         self.target_db_key = "vulnerable_targets"
         self.target_metadata_key = "target_metadata"
         self.target_test_results_key = "target_test_results"
