@@ -43,9 +43,12 @@ def make_request(endpoint: str, method: str = "GET", data: Dict = None, files: D
             raise ValueError(f"Unsupported method: {method}")
         
         response.raise_for_status()
-        return response.json()
+        content_type = response.headers.get("content-type", "").lower()
+        if "application/json" in content_type:
+            return response.json()
+        return {"status_code": response.status_code, "text": response.text}
     
-    except requests.exceptions.RequestException as e:
+    except (requests.exceptions.RequestException, ValueError) as e:
         print(f"Request failed: {e}")
         return {"error": str(e)}
 
@@ -424,9 +427,12 @@ def main():
     
     # Check if API is available
     try:
-        health_check = make_request("/docs")
+        health_check = make_request("/")
         if "error" in health_check:
             print("❌ API is not available. Please ensure the server is running.")
+            sys.exit(1)
+        if health_check.get("ping") != "pong!":
+            print(f"❌ API ping returned unexpected payload: {health_check}")
             sys.exit(1)
         print("✅ API is available")
     except Exception as e:
