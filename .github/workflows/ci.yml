@@ -90,7 +90,7 @@ jobs:
       - name: Start stack for integration checks
         run: |
           cp sample.env .env
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d redis celery_worker nuclei-api
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d redis celery_worker nuclei-api nuclei-fingerprint ollama
 
       - name: Wait for API readiness
         run: |
@@ -152,6 +152,14 @@ jobs:
           assert final_status in {"SUCCESS", "FAILURE"}, f"task stuck with status={final_status}"
           print(f"Smoke checks passed; task={task_id} status={final_status}")
           PY
+
+      - name: Run API scenario runner (verbose output)
+        env:
+          API_BASE_URL: http://localhost:8000
+          SCENARIO_WAIT_FOR_COMPLETION: "false"
+        run: |
+          set -euo pipefail
+          python tests/nuclei_api_scenario_runner.py | tee /tmp/nuclei_api_scenarios.log
 
       - name: Dump service logs on failure
         if: failure()

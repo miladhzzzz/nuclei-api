@@ -9,15 +9,23 @@ import json
 import time
 import base64
 import sys
+import os
 from typing import Dict, Any
 
 # Configuration
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+WAIT_FOR_COMPLETION = os.getenv("SCENARIO_WAIT_FOR_COMPLETION", "false").lower() in {"1", "true", "yes"}
 TEST_TARGETS = [
     "example.com",
     "192.168.1.1",
     "google.com"
 ]
+FAILED_SCENARIOS = []
+
+
+def record_failure(name: str, detail: str):
+    FAILED_SCENARIOS.append({"name": name, "detail": detail})
+    print(f"❌ {name}: {detail}")
 
 def make_request(endpoint: str, method: str = "GET", data: Dict = None, files: Dict = None) -> Dict[str, Any]:
     """Make HTTP request to the API."""
@@ -118,13 +126,14 @@ def test_comprehensive_scan():
             print(f"   Task ID: {task_id}")
             print(f"   Message: {result.get('message')}")
             
-            # Wait for completion (optional)
-            if input(f"Wait for {scan_config['name']} completion? (y/n): ").lower() == 'y':
+            if WAIT_FOR_COMPLETION:
                 task_result = wait_for_task_completion(task_id)
                 if "error" not in task_result:
                     print(f"   Result: {json.dumps(task_result.get('result', {}), indent=2)}")
+                else:
+                    record_failure(scan_config["name"], task_result["error"])
         else:
-            print(f"❌ {scan_config['name']} failed: {result['error']}")
+            record_failure(scan_config["name"], result["error"])
 
 def test_individual_scan_endpoints():
     """Test individual scan endpoints."""
@@ -143,7 +152,7 @@ def test_individual_scan_endpoints():
     if "error" not in result:
         print(f"✅ Auto scan started: {result.get('task_id')}")
     else:
-        print(f"❌ Auto scan failed: {result['error']}")
+        record_failure("Auto Scan Endpoint", result["error"])
     
     # Test fingerprint scan
     print("\n--- Testing Fingerprint Scan Endpoint ---")
@@ -155,7 +164,7 @@ def test_individual_scan_endpoints():
     if "error" not in result:
         print(f"✅ Fingerprint scan started: {result.get('task_id')}")
     else:
-        print(f"❌ Fingerprint scan failed: {result['error']}")
+        record_failure("Fingerprint Scan Endpoint", result["error"])
     
     # Test AI scan
     print("\n--- Testing AI Scan Endpoint ---")
@@ -167,7 +176,7 @@ def test_individual_scan_endpoints():
     if "error" not in result:
         print(f"✅ AI scan started: {result.get('task_id')}")
     else:
-        print(f"❌ AI scan failed: {result['error']}")
+        record_failure("AI Scan Endpoint", result["error"])
 
 def test_fingerprinting():
     """Test fingerprinting functionality."""
@@ -193,7 +202,7 @@ def test_fingerprinting():
                 print(f"   OS Detected: {fingerprint_result.get('os_detected', 'Unknown')}")
                 print(f"   Recommended Templates: {fingerprint_result.get('recommended_templates', [])}")
         else:
-            print(f"❌ Fingerprinting failed for {target}: {result['error']}")
+            record_failure(f"Fingerprint {target}", result["error"])
 
 def test_template_validation():
     """Test template validation functionality."""
@@ -265,9 +274,12 @@ requests:
                 if is_valid == template_test["expected"]:
                     print(f"   ✅ Expected result: {template_test['expected']}")
                 else:
-                    print(f"   ❌ Unexpected result: expected {template_test['expected']}, got {is_valid}")
+                    record_failure(
+                        f"Template Validation {template_test['name']}",
+                        f"expected {template_test['expected']}, got {is_valid}"
+                    )
         else:
-            print(f"❌ Template validation failed: {result['error']}")
+            record_failure(f"Template Validation {template_test['name']}", result["error"])
 
 def test_custom_template_scan():
     """Test custom template scan functionality."""
@@ -312,15 +324,16 @@ requests:
         print(f"✅ Custom template scan started")
         print(f"   Task ID: {task_id}")
         print(f"   Target: {custom_scan_data['target']}")
-        print(f"   Template: {custom_scan_data['template_filename']}")
+        print(f"   Template: custom-test-template.yaml")
         
-        # Wait for completion
-        if input("Wait for custom template scan completion? (y/n): ").lower() == 'y':
+        if WAIT_FOR_COMPLETION:
             task_result = wait_for_task_completion(task_id)
             if "error" not in task_result:
                 print(f"   Result: {json.dumps(task_result.get('result', {}), indent=2)}")
+            else:
+                record_failure("Custom Template Scan", task_result["error"])
     else:
-        print(f"❌ Custom template scan failed: {result['error']}")
+        record_failure("Custom Template Scan", result["error"])
 
 def test_legacy_endpoints():
     """Test legacy endpoints for backward compatibility."""
@@ -338,7 +351,7 @@ def test_legacy_endpoints():
     if "error" not in result:
         print(f"✅ Legacy scan started: {result.get('task_id')}")
     else:
-        print(f"❌ Legacy scan failed: {result['error']}")
+        record_failure("Legacy Scan Endpoint", result["error"])
     
     # AI endpoint
     print("\n--- Testing AI Scan Endpoint ---")
@@ -350,7 +363,7 @@ def test_legacy_endpoints():
     if "error" not in result:
         print(f"✅ AI scan started: {result.get('task_id')}")
     else:
-        print(f"❌ AI scan failed: {result['error']}")
+        record_failure("AI Endpoint", result["error"])
 
 def test_template_upload():
     """Test template upload functionality."""
@@ -394,7 +407,7 @@ requests:
             print(f"   Filename: {result.get('filename')}")
             print(f"   Message: {result.get('message')}")
         else:
-            print(f"❌ Template upload failed: {result['error']}")
+            record_failure("Template Upload", result["error"])
     
     finally:
         # Clean up temporary file
@@ -430,7 +443,7 @@ def main():
     test_template_upload()
     
     print("\n" + "="*60)
-    print("🎉 ALL TESTS COMPLETED")
+    print("SCENARIO RUN COMPLETE")
     print("="*60)
     print("\nThe enhanced Nuclei API now supports:")
     print("✅ Comprehensive scan endpoint with multiple scan types")
@@ -444,6 +457,15 @@ def main():
     print("✅ Template upload")
     print("✅ Legacy endpoint compatibility")
     print("\nAll scan types are now available through a unified API!")
+
+    if FAILED_SCENARIOS:
+        print("\nFailures:")
+        for idx, failure in enumerate(FAILED_SCENARIOS, 1):
+            print(f"{idx}. {failure['name']}: {failure['detail']}")
+        sys.exit(1)
+
+    print("\n✅ All scenario checks passed")
+    sys.exit(0)
 
 if __name__ == "__main__":
     main() 
