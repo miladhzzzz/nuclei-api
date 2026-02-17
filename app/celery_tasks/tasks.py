@@ -431,8 +431,10 @@ def template_validation_pipeline(template_content: str, template_filename: Optio
     start_time = time.time()
     temp_path = None
     try:
-        # Save template to temporary file if content provided
-        if template_content and not template_filename:
+        # Save template to a temporary file whenever content is provided.
+        # `template_filename` is treated as metadata for responses, not as an on-disk path.
+        validation_path = template_filename
+        if template_content:
             import tempfile
             try:
                 decoded_content = base64.b64decode(template_content).decode("utf-8")
@@ -441,21 +443,21 @@ def template_validation_pipeline(template_content: str, template_filename: Optio
                 decoded_content = template_content
             with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
                 f.write(decoded_content)
-                template_filename = f.name
+                validation_path = f.name
                 temp_path = f.name
         
-        if not template_filename:
+        if not validation_path:
             raise ValueError("No template file or content provided")
         
         # Validate template using TemplateController
         from controllers.TemplateController import TemplateController
         template_controller = TemplateController()
-        validation_result = template_controller.validate_template_cel(template_filename)
+        validation_result = template_controller.validate_template_cel(validation_path)
         
         if validation_result:
             result = {"status": "failed", "error": validation_result}
         else:
-            result = {"status": "success", "template_file": template_filename}
+            result = {"status": "success", "template_file": template_filename or validation_path}
         
         duration = time.time() - start_time
         record_celery_task("template_validation_pipeline", result["status"], duration)
