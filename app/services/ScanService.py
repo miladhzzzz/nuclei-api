@@ -57,7 +57,19 @@ class ScanService:
         """
         try:
             response = self.fingerprint_controller.fingerprint_target(target)
-            os_name = response if isinstance(response, str) else response.get("os")
+            os_name = None
+            if isinstance(response, str):
+                os_name = response
+            elif isinstance(response, dict):
+                if response.get("accepted"):
+                    logger.info(f"Fingerprint scan queued for {target} with job {response.get('jobId')}")
+                    return None
+                if response.get("error"):
+                    logger.warning(f"Fingerprint service returned error for {target}: {response.get('error')}")
+                    return None
+                os_name = response.get("os")
+                if not os_name and response.get("data"):
+                    os_name = self.fingerprint_controller.get_os_family(response)
             if not os_name:
                 logger.warning(f"No OS detected for {target}")
                 return None
