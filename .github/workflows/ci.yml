@@ -164,10 +164,11 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
   api-scenario-runner:
-    name: API Scenario Runner (Non-Blocking)
+    name: API Scenario Runner (E2E TEST)
     runs-on: ubuntu-latest
     needs:
       - docker-build
+      - integration-smoke
     continue-on-error: true
 
     steps:
