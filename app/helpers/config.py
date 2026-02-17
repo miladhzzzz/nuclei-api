@@ -42,6 +42,8 @@ class Config():
         self.fingerprint_url = os.getenv("FINGERPRINT_URL", "http://nuclei-fingerprint:3000/")
         self.fingerprint_quick_scan_type = os.getenv("FINGERPRINT_QUICK_SCAN_TYPE", "quickOsAndPorts")
         self.fingerprint_aggressive_scan_type = os.getenv("FINGERPRINT_AGGRESSIVE_SCAN_TYPE", "aggressiveOsAndPort")
+        self.fingerprint_async_mode = os.getenv("FINGERPRINT_ASYNC_MODE", "true").strip().lower() in {"1", "true", "yes", "on"}
+        self.fingerprint_submit_timeout = int(os.getenv("FINGERPRINT_SUBMIT_TIMEOUT", "10"))
         self.fingerprint_quick_timeout = int(os.getenv("FINGERPRINT_QUICK_TIMEOUT", "2000"))
         self.fingerprint_aggressive_timeout = int(os.getenv("FINGERPRINT_AGGRESSIVE_TIMEOUT", "3000"))
 

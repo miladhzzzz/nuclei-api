@@ -24,7 +24,7 @@ services:
 
   celery_worker:
     build: .
-    command: celery -A celery_config:celery_app worker --loglevel=info --concurrency=1
+    command: celery -A celery_config:celery_app worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-1}
     privileged: true
     depends_on:
       - redis

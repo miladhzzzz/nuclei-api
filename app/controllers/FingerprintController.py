@@ -14,7 +14,8 @@ class FingerprintController:
         """Basic fingerprinting using the fingerprint service"""
         data = {
             "ip": target,
-            "scanType": self.conf.fingerprint_quick_scan_type
+            "scanType": self.conf.fingerprint_quick_scan_type,
+            "async": self.conf.fingerprint_async_mode,
         }
         headers = {'Content-Type': 'application/json'}
         try:
@@ -22,7 +23,7 @@ class FingerprintController:
                 self.fingerprint_url + "scan/ip/",
                 json=data,
                 headers=headers,
-                timeout=self.conf.fingerprint_quick_timeout
+                timeout=self.conf.fingerprint_submit_timeout if self.conf.fingerprint_async_mode else self.conf.fingerprint_quick_timeout
             )
             response.raise_for_status()
             return response.json()
@@ -33,7 +34,8 @@ class FingerprintController:
         """Comprehensive fingerprinting using the fingerprint service"""
         data = {
             "ip": target,
-            "scanType": self.conf.fingerprint_aggressive_scan_type
+            "scanType": self.conf.fingerprint_aggressive_scan_type,
+            "async": self.conf.fingerprint_async_mode,
         }
         headers = {'Content-Type': 'application/json'}
         try:
@@ -41,7 +43,7 @@ class FingerprintController:
                 self.fingerprint_url + "scan/ip/",
                 json=data,
                 headers=headers,
-                timeout=self.conf.fingerprint_aggressive_timeout
+                timeout=self.conf.fingerprint_submit_timeout if self.conf.fingerprint_async_mode else self.conf.fingerprint_aggressive_timeout
             )
             response.raise_for_status()
             return response.json()
