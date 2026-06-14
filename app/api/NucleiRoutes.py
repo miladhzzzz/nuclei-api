@@ -1,20 +1,18 @@
 import re, socket
-from typing import Optional, List
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from typing import Optional
+from slowapi.extension import Limiter
 from slowapi.util import get_remote_address
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, BackgroundTasks, Body
 from fastapi.responses import StreamingResponse, JSONResponse
 from celery.result import AsyncResult
 from celery_tasks.tasks import *
-from pydantic import BaseModel, Field, ValidationError
 from models.models import (
     ScanRequest, ScanWithPromptRequest, ScanResponse, TaskStatusResponse, 
-    CustomTemplateScanRequest, ComprehensiveScanRequest, FingerprintRequest,
-    FingerprintResponse, TemplateUploadResponse, WorkflowUploadRequest, ScanResult
+    ComprehensiveScanRequest, FingerprintRequest,
+    FingerprintResponse, TemplateUploadResponse,
 )
 from services import ScanService, TemplateService
 from controllers.DockerController import DockerController
-from controllers.TemplateController import TemplateController
 import logging
 
 router = APIRouter()
